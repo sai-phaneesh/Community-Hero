@@ -82,19 +82,23 @@ const Main = () => {
         },
       }),
   );
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
+  const [trpcClient] = useState(() => {
+    // Use VITE_API_URL if set, otherwise use relative path for same-origin
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const trpcUrl = apiUrl ? `${apiUrl}/trpc` : '/trpc';
+    
+    return trpc.createClient({
       links: [
         httpBatchLink({
-          url: "/trpc",
+          url: trpcUrl,
           headers() {
             const token = localStorage.getItem("community_hero_token");
             return token ? { Authorization: `Bearer ${token}` } : {};
           },
         }),
       ],
-    }),
-  );
+    });
+  });
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>

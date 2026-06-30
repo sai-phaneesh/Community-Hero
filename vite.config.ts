@@ -11,6 +11,28 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Vendor chunks to reduce main bundle
+            react: ['react', 'react-dom', 'react-router-dom'],
+            ui: ['lucide-react', 'sonner'],
+            leaflet: ['leaflet'],
+            trpc: ['@trpc/react-query', '@trpc/client'],
+            tanstack: ['@tanstack/react-query'],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 850, // Increase threshold to 850 kB
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true,
+          dead_code: true,
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify - file watching is disabled to prevent flickering during agent edits.

@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import bcrypt from "bcrypt";
 import { UserRepository } from "../domain/repositories/user.repository";
 import { User } from "../../types";
 
@@ -75,7 +74,7 @@ export class AuthUseCase {
     const session = { sessionId, deviceName, lastUsedAt: now };
 
     const passwordToHash = data.password || "default123";
-    const hashedPassword = await bcrypt.hash(passwordToHash, 10);
+    const hashedPassword = crypto.scryptSync(passwordToHash, 'salt', 64).toString('hex');
 
     const newUser: User & { password?: string } = {
       id: crypto.randomUUID(),
@@ -116,13 +115,8 @@ export class AuthUseCase {
       if (!password) {
         throw new Error("Invalid email or password.");
       }
-      let passwordMatch = false;
-      const isBcryptHash = storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2x$") || storedPassword.startsWith("$2y$");
-      if (isBcryptHash) {
-        passwordMatch = await bcrypt.compare(password, storedPassword);
-      } else {
-        passwordMatch = storedPassword === password;
-      }
+      const hashedInput = crypto.scryptSync(password, 'salt', 64).toString('hex');
+      const passwordMatch = hashedInput === storedPassword;
       if (!passwordMatch) {
         throw new Error("Invalid email or password.");
       }

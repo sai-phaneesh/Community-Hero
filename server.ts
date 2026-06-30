@@ -11,7 +11,14 @@ import { createContext, paymentRepository, notificationUseCase, issueTimelineRep
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5001;
 
-app.use(cors());
+// Configure CORS for Firebase Hosting + local development
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000').split(',');
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
 // Mount tRPC Express Adapter
@@ -89,9 +96,7 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 // --- VITE MIDDLEWARE SETUP ---
 async function startServer() {
-  // Initialize Database (CockroachDB or Fallback)
-  await initDb();
-
+  // Start server FIRST before any database initialization
   // Serve public/uploads statically with cache control headers
   app.use(
     "/uploads",
@@ -118,6 +123,17 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Initialize Database in background (non-blocking)
+  (async () => {
+    try {
+      console.log("Initializing database in background...");
+      await initDb();
+      console.log("Database initialized successfully");
+    } catch (e) {
+      console.error("Database initialization failed, using fallback:", e);
+    }
+  })();
 
   // Start Payment Overdue Cron Job
   const OVERDUE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
