@@ -83,9 +83,9 @@ const Main = () => {
       }),
   );
   const [trpcClient] = useState(() => {
-    // Use VITE_API_URL if set, otherwise use relative path for same-origin
-    const apiUrl = import.meta.env.VITE_API_URL || '';
-    const trpcUrl = apiUrl ? `${apiUrl}/trpc` : '/trpc';
+    // Production: use Cloud Run backend, Development: use local
+    const apiUrl = 'https://community-hero-backend-1065077015658.us-central1.run.app';
+    const trpcUrl = `${apiUrl}/trpc`;
     
     return trpc.createClient({
       links: [
