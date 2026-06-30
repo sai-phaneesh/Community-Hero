@@ -1,0 +1,6751 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { User, Issue, Survey, Notification, Campaign } from "../types";
+import { TabType, isValidTab, roleDefaultTab } from "../routes/tabs";
+import { trpc } from "../frontend/trpc";
+import { toast } from "sonner";
+import { useMultiUpload } from "../frontend/hooks/useMultiUpload";
+import { useIssueFilters } from "../frontend/hooks/useIssueFilters";
+import { useWebPush } from "../frontend/hooks/useWebPush";
+// Extracted pages
+import ReportPage from "../routes/app/report/page";
+import SurveyPage from "../routes/app/survey/page";
+import AdminSurveysPage from "../routes/app/admin-surveys/page";
+import AdminAnnouncementsPage from "../routes/app/admin-announcements/page";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import {
+  AlertTriangle,
+  Clock,
+  ThumbsUp,
+  UserCheck,
+  CheckCircle,
+  PlusCircle,
+  TrendingUp,
+  Award,
+  DollarSign,
+  MapPin,
+  ClipboardList,
+  Sparkles,
+  Search,
+  CheckCircle2,
+  Calendar,
+  Send,
+  MessageSquare,
+  Bell,
+  Megaphone,
+  LogOut,
+  Sliders,
+  AlertCircle,
+  Home,
+  FileText,
+  Menu,
+  MoreHorizontal,
+  Share2,
+  Sun,
+  Moon,
+  X,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+interface DashboardProps {
+  user: User;
+  onLogout: () => void;
+  onUpdateUser: (updatedUser: User) => void;
+  theme: "light" | "dark";
+  toggleTheme: () => void;
+}
+
+export default function Dashboard({
+  user,
+  onLogout,
+  onUpdateUser,
+  theme,
+  toggleTheme,
+}: DashboardProps) {
+  // Common states
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  // Active tab is derived from the URL (/app/:tab) so navigation is real
+  // routing: back/forward, bookmarking, and reload all "just work".
+  const navigate = useNavigate();
+  const { tab } = useParams<{ tab: string }>();
+  const activeTab: TabType = isValidTab(tab) ? tab : roleDefaultTab(user);
+  const setActiveTab = useCallback(
+    (next: TabType) => {
+      navigate(`/app/${next}`);
+    },
+    [navigate],
+  );
+  const [showMobileMoreMenu, setShowMobileMoreMenu] = useState(false);
+
+  // Custom state hooks
+  const {
+    uploadedBeforeImages,
+    uploadedBeforeVideos,
+    uploadedAfterImages,
+    uploadedAfterVideos,
+    uploadProgress,
+    uploadingFileName,
+    uploadError,
+    handleMultipleFilesChange,
+    setUploadedBeforeImages,
+    setUploadedBeforeVideos,
+    resetBeforeUploads,
+    resetAfterUploads,
+  } = useMultiUpload();
+
+  // Reporting states
+  const [reportTitle, setReportTitle] = useState("");
+  const [reportDesc, setReportDesc] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<{
+    category: string;
+    severity: string;
+    wasteCaused: string;
+    repairSuggestion: string;
+    authenticityClues: string;
+  } | null>(null);
+
+  // Custom manual overrides for reporting
+  const [manualCategory, setManualCategory] = useState("Water Leakage");
+  const [manualSeverity, setManualSeverity] = useState<
+    "Low" | "Medium" | "High" | "Critical"
+  >("Medium");
+  const [manualWaste, setManualWaste] = useState("");
+
+  // Survey states
+  const [surveyHappiness, setSurveyHappiness] = useState<number>(4);
+  const [surveyServices, setSurveyServices] = useState<number>(3);
+  const [surveyRoads, setSurveyRoads] = useState<number>(3);
+  const [surveyCleanliness, setSurveyCleanliness] = useState<number>(3);
+  const [surveyFeedback, setSurveyFeedback] = useState("");
+  const [surveySuccess, setSurveySuccess] = useState(false);
+  const [surveyError, setSurveyError] = useState("");
+
+  // Admin survey tracking states
+  const [adminSurveys, setAdminSurveys] = useState<Survey[]>([]);
+
+  // Contractor states
+  const [priceQuoteInput, setPriceQuoteInput] = useState<string>("150");
+  const [resolutionNotesInput, setResolutionNotesInput] = useState("");
+  const [selectedIssueForAction, setSelectedIssueForAction] = useState<
+    string | null
+  >(null);
+
+  // New Bid Form States
+  const [bidMaterialsCost, setBidMaterialsCost] = useState("50");
+  const [bidLaborCost, setBidLaborCost] = useState("100");
+  const [bidEstimatedHours, setBidEstimatedHours] = useState("4");
+  const [bidProposalNotes, setBidProposalNotes] = useState("");
+  const [showBidFormForIssue, setShowBidFormForIssue] = useState<string | null>(
+    null,
+  );
+
+  // New Announcement Form States
+  const [annTitle, setAnnTitle] = useState("");
+  const [annDesc, setAnnDesc] = useState("");
+  const [annCategory, setAnnCategory] = useState<
+    | "Water Cut"
+    | "Electricity Outage"
+    | "Garbage Collection"
+    | "Water Outlet"
+    | "Other"
+  >("Water Cut");
+  const [annDate, setAnnDate] = useState("");
+  const [annStart, setAnnStart] = useState("");
+  const [annEnd, setAnnEnd] = useState("");
+  const [annAreas, setAnnAreas] = useState("");
+
+  // New Chat States
+  const [chatMessageInput, setChatMessageInput] = useState("");
+  const [activeIssueChatId, setActiveIssueChatId] = useState<string | null>(
+    null,
+  );
+  const [selectedIssueForBids, setSelectedIssueForBids] = useState<
+    string | null
+  >(null);
+
+  // Additional Bids, Comments, Timelines, and Reopen States
+  const [selectedBidForComments, setSelectedBidForComments] = useState<
+    string | null
+  >(null);
+  const [bidCommentInput, setBidCommentInput] = useState("");
+  const [counterAmountInput, setCounterAmountInput] = useState("");
+  const [showCounterOfferForBid, setShowCounterOfferForBid] = useState<
+    string | null
+  >(null);
+  const [manualTimelineTitle, setManualTimelineTitle] = useState("");
+  const [manualTimelineDesc, setManualTimelineDesc] = useState("");
+  const [showReopenDialogForIssue, setShowReopenDialogForIssue] = useState<
+    string | null
+  >(null);
+  const [reopenReasonInput, setReopenReasonInput] = useState("");
+  const [expandedTimelineIssueId, setExpandedTimelineIssueId] = useState<
+    string | null
+  >(null);
+
+  // Profile settings states
+  const [profileName, setProfileName] = useState(user.name);
+  const [profileUsername, setProfileUsername] = useState(user.username || "");
+  const [profilePhone, setProfilePhone] = useState(user.phone);
+  const [profileRole, setProfileRole] = useState<
+    "resident" | "contractor" | "admin"
+  >(user.role);
+  const [profileHouse, setProfileHouse] = useState(user.houseNumber || "");
+  const [profileSpecialty, setProfileSpecialty] = useState(
+    user.specialty || "Plumber",
+  );
+  const [profileCapabilities, setProfileCapabilities] = useState<string[]>(
+    user.capabilities || [],
+  );
+  const [profileAvatar, setProfileAvatar] = useState(user.avatarUrl || "");
+  const [profileResidenceType, setProfileResidenceType] = useState<
+    "owner" | "renter" | ""
+  >(user.residenceType || "");
+  const [profileResidenceStart, setProfileResidenceStart] = useState(
+    user.residenceStartDate || "",
+  );
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarProgress, setAvatarProgress] = useState(0);
+
+  // Sync profile editing states if the user prop updates
+  useEffect(() => {
+    setProfileName(user.name);
+    setProfileUsername(user.username || "");
+    setProfilePhone(user.phone);
+    setProfileRole(user.role);
+    setProfileHouse(user.houseNumber || "");
+    setProfileSpecialty(user.specialty || "Plumber");
+    setProfileCapabilities(user.capabilities || []);
+    setProfileAvatar(user.avatarUrl || "");
+    setProfileResidenceType(user.residenceType || "");
+    setProfileResidenceStart(user.residenceStartDate || "");
+  }, [user]);
+
+  // Deep Linking Interception
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const issueId = params.get("issueId");
+    if (issueId && (window as any).__jumpToIssue) {
+      setTimeout(() => {
+        (window as any).__jumpToIssue(issueId);
+        // Clear the URL to avoid jumping again on reload
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname,
+        );
+      }, 500); // Give it a little time for initial render
+    }
+  }, [issues]); // depend on issues so we wait for them to load
+
+  // Public profile modal state
+  const [selectedUserForProfile, setSelectedUserForProfile] =
+    useState<User | null>(null);
+  const [ratingInput, setRatingInput] = useState(0);
+  const [commentInput, setCommentInput] = useState("");
+  const [reviewingIssueId, setReviewingIssueId] = useState<string | null>(null);
+
+  const handleUserClick = (userId: string) => {
+    const found = usersQuery.data?.find((u) => u.id === userId);
+    if (found) {
+      setSelectedUserForProfile(found);
+    } else {
+      setSelectedUserForProfile({
+        id: userId,
+        name: "Community Neighbor",
+        email: "",
+        role: "resident",
+        phone: "",
+        username: `neighbor_${userId.slice(-4)}`,
+        points: 10,
+        badges: [],
+        tenancyHistory: [],
+      });
+    }
+  };
+
+  // Online/Offline network state
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.success("Connection restored! All actions re-enabled.");
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast.warning("Connection lost. Switched to view-only offline mode.", {
+        duration: 8000,
+      });
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Global window handler for Leaflet Map Popups
+  useEffect(() => {
+    (window as any).__jumpToIssue = (issueId: string) => {
+      setActiveTab("issues");
+      setTimeout(() => {
+        const el = document.getElementById(`issue-card-${issueId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-2", "ring-emerald-500", "ring-offset-2");
+          setTimeout(
+            () =>
+              el.classList.remove(
+                "ring-2",
+                "ring-emerald-500",
+                "ring-offset-2",
+              ),
+            3000,
+          );
+        }
+      }, 150);
+    };
+    return () => {
+      delete (window as any).__jumpToIssue;
+    };
+  }, []);
+
+  const {
+    searchQuery,
+    setSearchQuery,
+    filterCategory,
+    setFilterCategory,
+    filterStatus,
+    setFilterStatus,
+    sortBy,
+    setSortBy,
+    showDuplicates,
+    setShowDuplicates,
+    filteredIssues,
+  } = useIssueFilters(issues);
+
+  // Notifications
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Gamification, Map Hub, Broadcasts, Follows, & Geolocation states
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [reportLat, setReportLat] = useState("");
+  const [reportLng, setReportLng] = useState("");
+  const [prevNotifCount, setPrevNotifCount] = useState<number | null>(null);
+
+  // Custom Push Notifications hook
+  const { triggerPush } = useWebPush();
+
+  // Payment states
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
+    null,
+  );
+  const [paymentProofUrl, setPaymentProofUrl] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "Cash" | "UPI" | "Bank Transfer" | "Cheque" | "Other"
+  >("Cash");
+
+  // Map elements refs
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+
+  // Click outside to close notifications dropdown
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // tRPC Queries
+  const issuesQuery = trpc.issue.list.useInfiniteQuery(
+    { limit: 10 },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      refetchInterval: 10000,
+    },
+  );
+  const notificationsQuery = trpc.notification.list.useQuery(
+    { userId: user.id },
+    {
+      refetchInterval: 10000,
+    },
+  );
+  const surveysQuery = trpc.survey.list.useQuery(undefined, {
+    enabled: user.role === "admin",
+    refetchInterval: 10000,
+  });
+  const usersQuery = trpc.auth.list.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+
+  // tRPC Mutations
+  const toggleFollowMutation = trpc.issue.toggleFollow.useMutation();
+  const broadcastMutation = trpc.notification.broadcast.useMutation();
+  const updateProfileMutation = trpc.auth.updateProfile.useMutation();
+
+  // Sessions queries & mutations
+  const sessionsQuery = trpc.auth.listSessions.useQuery(undefined, {
+    enabled: activeTab === "profile",
+  });
+  const revokeSessionMutation = trpc.auth.revokeSession.useMutation({
+    onSuccess: () => {
+      sessionsQuery.refetch();
+      toast.success("Device logged out successfully.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to log out device.");
+    },
+  });
+  const logoutOtherDevicesMutation = trpc.auth.logoutOtherDevices.useMutation({
+    onSuccess: () => {
+      sessionsQuery.refetch();
+      toast.success("All other devices logged out successfully.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to log out other devices.");
+    },
+  });
+
+  // Campaign Queries & Mutations
+  const campaignsQuery = trpc.campaign.list.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+
+  const createCampaignMutation = trpc.campaign.create.useMutation({
+    onSuccess: () => {
+      campaignsQuery.refetch();
+      setCampaignTitle("");
+      setCampaignDesc("");
+      setCampaignCategory("Cleaning");
+      setCampaignLocation("");
+      setCampaignDate("");
+      setCampaignMaxAttendees("");
+      toast.success("Community campaign created successfully!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to create campaign.");
+    },
+  });
+
+  const toggleJoinCampaignMutation = trpc.campaign.toggleJoin.useMutation({
+    onSuccess: () => {
+      campaignsQuery.refetch();
+      toast.success("RSVP updated successfully!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to RSVP.");
+    },
+  });
+
+  // Capability & Group Queries & Mutations
+  const capabilityGroupsQuery = trpc.capability.listGroups.useQuery(undefined, {
+    refetchInterval: 15000,
+  });
+  const capabilityGroups = capabilityGroupsQuery.data || [];
+  const capabilities = capabilityGroups.flatMap((g) => g.capabilities || []);
+
+  const createGroupMutation = trpc.capability.createGroup.useMutation({
+    onSuccess: () => {
+      capabilityGroupsQuery.refetch();
+      toast.success("Capability group created successfully!");
+    },
+    onError: (err) => toast.error(err.message || "Failed to create group."),
+  });
+
+  const updateGroupMutation = trpc.capability.updateGroup.useMutation({
+    onSuccess: () => {
+      capabilityGroupsQuery.refetch();
+      toast.success("Capability group updated!");
+    },
+    onError: (err) => toast.error(err.message || "Failed to update group."),
+  });
+
+  const deleteGroupMutation = trpc.capability.deleteGroup.useMutation({
+    onSuccess: () => {
+      capabilityGroupsQuery.refetch();
+      toast.success("Capability group deleted.");
+    },
+    onError: (err) => toast.error(err.message || "Failed to delete group."),
+  });
+
+  const createCapabilityMutation = trpc.capability.createCapability.useMutation(
+    {
+      onSuccess: () => {
+        capabilityGroupsQuery.refetch();
+        toast.success("Capability created successfully!");
+      },
+      onError: (err) =>
+        toast.error(err.message || "Failed to create capability."),
+    },
+  );
+
+  const updateCapabilityMutation = trpc.capability.updateCapability.useMutation(
+    {
+      onSuccess: () => {
+        capabilityGroupsQuery.refetch();
+        toast.success("Capability updated!");
+      },
+      onError: (err) =>
+        toast.error(err.message || "Failed to update capability."),
+    },
+  );
+
+  const deleteCapabilityMutation = trpc.capability.deleteCapability.useMutation(
+    {
+      onSuccess: () => {
+        capabilityGroupsQuery.refetch();
+        toast.success("Capability deleted.");
+      },
+      onError: (err) =>
+        toast.error(err.message || "Failed to delete capability."),
+    },
+  );
+
+  const transferCapabilityMutation =
+    trpc.capability.transferCapability.useMutation({
+      onSuccess: () => {
+        capabilityGroupsQuery.refetch();
+        toast.success("Capability transferred successfully!");
+      },
+      onError: (err) =>
+        toast.error(err.message || "Failed to transfer capability."),
+    });
+
+  // Bids Mutations & Queries
+  const submitBidMutation = trpc.bid.submit.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      contractorBidsQuery.refetch();
+      toast.success("Bid proposal submitted successfully!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to submit bid proposal.");
+    },
+  });
+
+  const acceptBidMutation = trpc.bid.accept.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      toast.success("Bid proposal accepted! Contractor is assigned.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to accept bid proposal.");
+    },
+  });
+
+  const rejectBidMutation = trpc.bid.reject.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      toast.success("Bid proposal declined.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to decline bid proposal.");
+    },
+  });
+
+  // Announcements Mutations & Queries
+  const announcementsQuery = trpc.announcement.list.useQuery(undefined, {
+    refetchInterval: 15000,
+  });
+  const announcements = announcementsQuery.data || [];
+
+  const createAnnouncementMutation = trpc.announcement.create.useMutation({
+    onSuccess: () => {
+      announcementsQuery.refetch();
+      toast.success("Utility announcement scheduled!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to schedule announcement.");
+    },
+  });
+
+  const deleteAnnouncementMutation = trpc.announcement.delete.useMutation({
+    onSuccess: () => {
+      announcementsQuery.refetch();
+      toast.success("Announcement deleted.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete announcement.");
+    },
+  });
+
+  // Bid comments queries and mutations
+  const bidCommentsQuery = trpc.bidComment.listForBid.useQuery(
+    { bidId: selectedBidForComments || "" },
+    { enabled: !!selectedBidForComments, refetchInterval: 3000 },
+  );
+  const activeBidComments = bidCommentsQuery.data || [];
+
+  // Payments Queries & Mutations
+  const allPaymentsQuery = trpc.payment.listAll.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+  const myPaymentsQuery = trpc.payment.myPayments.useQuery(undefined, {
+    enabled: user.role === "contractor",
+    refetchInterval: 10000,
+  });
+  const contractorBidsQuery = trpc.bid.listForContractor.useQuery(undefined, {
+    enabled: user.role === "contractor",
+    refetchInterval: 10000,
+  });
+  const updatePaymentMutation = trpc.payment.updatePayment.useMutation({
+    onSuccess: () => {
+      allPaymentsQuery.refetch();
+      myPaymentsQuery.refetch();
+      issuesQuery.refetch();
+      toast.success("Payment status updated.");
+    },
+    onError: (err) =>
+      toast.error(err.message || "Failed to update payment status."),
+  });
+
+  const contractorReviewsQuery = trpc.review.listForContractor.useQuery(
+    { contractorId: selectedUserForProfile?.id || "" },
+    {
+      enabled:
+        !!selectedUserForProfile &&
+        selectedUserForProfile.role === "contractor",
+      refetchInterval: 10000,
+    },
+  );
+  const contractorReviews = contractorReviewsQuery.data || [];
+
+  const submitReviewMutation = trpc.review.submit.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      contractorReviewsQuery.refetch();
+      setRatingInput(0);
+      setCommentInput("");
+      setReviewingIssueId(null);
+      toast.success("Review submitted! Thank you for rating the contractor.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to submit review.");
+    },
+  });
+
+  const allPayments = allPaymentsQuery.data || [];
+  const myBids = contractorBidsQuery.data || [];
+
+  const sendBidCommentMutation = trpc.bidComment.sendComment.useMutation({
+    onSuccess: () => {
+      bidCommentsQuery.refetch();
+      setBidCommentInput("");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to post comment.");
+    },
+  });
+
+  // Counter offer mutations
+  const counterBidMutation = trpc.bid.counter.useMutation({
+    onSuccess: () => {
+      bidsQuery.refetch();
+      setShowCounterOfferForBid(null);
+      setCounterAmountInput("");
+      issuesQuery.refetch();
+      toast.success("Counter-offer proposed successfully!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to submit counter-offer.");
+    },
+  });
+
+  const acceptCounterMutation = trpc.bid.acceptCounter.useMutation({
+    onSuccess: () => {
+      bidsQuery.refetch();
+      issuesQuery.refetch();
+      contractorBidsQuery.refetch();
+      toast.success("Counter-offer accepted! Assignment confirmed.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to accept counter-offer.");
+    },
+  });
+
+  const rejectCounterMutation = trpc.bid.rejectCounter.useMutation({
+    onSuccess: () => {
+      bidsQuery.refetch();
+      issuesQuery.refetch();
+      contractorBidsQuery.refetch();
+      toast.success("Counter-offer declined.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to decline counter-offer.");
+    },
+  });
+
+  const markDuplicateMutation = trpc.issue.markDuplicate.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      toast.success("Issue marked as duplicate.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to mark duplicate.");
+    },
+  });
+
+  const handleMarkAsDuplicate = (id: string, canonicalId: string | null) => {
+    const msg = canonicalId
+      ? "Are you sure you want to mark this issue as a duplicate? This will link it and set its status to Resolved."
+      : "Are you sure you want to remove the duplicate flag from this issue?";
+    if (confirm(msg)) {
+      markDuplicateMutation.mutate({ id, canonicalId });
+    }
+  };
+
+  const findPotentialDuplicate = (currentIssue: Issue) => {
+    if (currentIssue.status === "Resolved" || currentIssue.duplicateOfIssueId)
+      return null;
+
+    const duplicates = issues.filter((i) => {
+      if (i.id === currentIssue.id) return false;
+      if (i.category !== currentIssue.category) return false;
+      if (i.status === "Resolved" || i.duplicateOfIssueId) return false;
+
+      // Haversine formula
+      const R = 6371000; // meters
+      const φ1 = (i.latitude * Math.PI) / 180;
+      const φ2 = (currentIssue.latitude * Math.PI) / 180;
+      const Δφ = ((currentIssue.latitude - i.latitude) * Math.PI) / 180;
+      const Δλ = ((currentIssue.longitude - i.longitude) * Math.PI) / 180;
+
+      const a =
+        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      return distance <= 100; // within 100 meters
+    });
+
+    return duplicates.length > 0 ? duplicates[0] : null;
+  };
+
+  // Issue timeline queries and mutations
+  const timelineQuery = trpc.issueTimeline.listForIssue.useQuery(
+    { issueId: expandedTimelineIssueId || "" },
+    { enabled: !!expandedTimelineIssueId },
+  );
+  const activeTimelineEvents = timelineQuery.data || [];
+
+  const addTimelineEventMutation = trpc.issueTimeline.addEvent.useMutation({
+    onSuccess: () => {
+      timelineQuery.refetch();
+      setManualTimelineTitle("");
+      setManualTimelineDesc("");
+      toast.success("Timeline milestone logged!");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to log timeline milestone.");
+    },
+  });
+
+  const reopenIssueMutation = trpc.issue.reopen.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      setShowReopenDialogForIssue(null);
+      setReopenReasonInput("");
+      toast.success(
+        "Issue successfully reopened. Contractors can now bid again.",
+      );
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to reopen issue.");
+    },
+  });
+
+  // Issue Bids Queries
+  const bidsQuery = trpc.bid.listForIssue.useQuery(
+    { issueId: selectedIssueForBids || "" },
+    { enabled: !!selectedIssueForBids },
+  );
+  const activeBids = bidsQuery.data || [];
+
+  // Issue Chat Messages Mutations & Queries
+  const chatMessagesQuery = trpc.issueMessage.listForIssue.useQuery(
+    { issueId: activeIssueChatId || "" },
+    { enabled: !!activeIssueChatId, refetchInterval: 3000 },
+  );
+  const chatMessages = chatMessagesQuery.data || [];
+
+  const sendChatMessageMutation = trpc.issueMessage.send.useMutation({
+    onError: (err) => {
+      toast.error(err.message || "Failed to send message.");
+    },
+  });
+
+  // Campaign form states
+  const [campaignTitle, setCampaignTitle] = useState("");
+  const [campaignDesc, setCampaignDesc] = useState("");
+  const [campaignCategory, setCampaignCategory] = useState<
+    "Cleaning" | "Planting" | "Safety" | "Social" | "Other"
+  >("Cleaning");
+  const [campaignLocation, setCampaignLocation] = useState("");
+  const [campaignDate, setCampaignDate] = useState("");
+  const [campaignMaxAttendees, setCampaignMaxAttendees] = useState("");
+
+  // Sync tRPC data with local states
+  useEffect(() => {
+    if (issuesQuery.data) {
+      const flattened = issuesQuery.data.pages.flatMap((page) => page.items);
+      setIssues(flattened);
+    }
+  }, [issuesQuery.data]);
+
+  useEffect(() => {
+    if (notificationsQuery.data) {
+      setNotifications(notificationsQuery.data);
+    }
+  }, [notificationsQuery.data]);
+
+  useEffect(() => {
+    if (surveysQuery.data) {
+      setAdminSurveys(surveysQuery.data);
+    }
+  }, [surveysQuery.data]);
+
+  // Web Push notifications trigger
+  useEffect(() => {
+    if (notificationsQuery.data) {
+      const unread = notificationsQuery.data.filter((n) => !n.read);
+      if (prevNotifCount !== null && unread.length > prevNotifCount) {
+        // Find the newly added unread notification
+        const latest = unread[0];
+        if (latest) {
+          triggerPush(latest.title, latest.message);
+        }
+      }
+      setPrevNotifCount(unread.length);
+    }
+  }, [notificationsQuery.data, triggerPush, prevNotifCount]);
+
+  // Leaflet Map hub mounting & setup
+  useEffect(() => {
+    if (
+      activeTab === "map" &&
+      mapContainerRef.current &&
+      !mapInstanceRef.current &&
+      issues
+    ) {
+      const centerLat = 12.9716;
+      const centerLng = 77.5946;
+
+      const map = L.map(mapContainerRef.current).setView(
+        [centerLat, centerLng],
+        14,
+      );
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      mapInstanceRef.current = map;
+
+      // Add pin for current user residence if location exists
+      if (user.latitude && user.longitude) {
+        const userIcon = L.divIcon({
+          html: `<div style="background-color: #4f46e5; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 9px;">🏠</div>`,
+          className: "user-marker-icon",
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        });
+        L.marker([user.latitude, user.longitude], { icon: userIcon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-family: sans-serif; font-size: 11px; padding: 2px;"><strong>My Registered Residence</strong><br/>House: ${user.houseNumber || "N/A"}</div>`,
+          );
+      }
+
+      // Add pins for all issues
+      issues.forEach((issue) => {
+        const lat = issue.latitude || centerLat;
+        const lng = issue.longitude || centerLng;
+
+        let markerColor = "#e11d48"; // Critical / High (Red)
+        if (issue.status === "Resolved") {
+          markerColor = "#10b981"; // Resolved (Green)
+        } else if (
+          issue.status === "In Progress" ||
+          issue.status === "Assigned"
+        ) {
+          markerColor = "#3b82f6"; // In Progress (Blue)
+        } else if (issue.status === "Validated") {
+          markerColor = "#f59e0b"; // Validated (Amber)
+        }
+
+        const customIcon = L.divIcon({
+          html: `<div style="background-color: ${markerColor}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+          className: "custom-marker-icon",
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        });
+
+        const popupContent = `
+          <div style="font-family: sans-serif; padding: 4px; max-width: 220px;">
+            <h4 style="margin: 0 0 4px; font-size: 13px; font-weight: bold; color: #1e293b;">${issue.title}</h4>
+            <p style="margin: 0 0 6px; font-size: 11px; color: #64748b;">${issue.description.substring(0, 80)}...</p>
+            <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 9999px; background-color: ${markerColor}20; color: ${markerColor}; border: 1px solid ${markerColor}40;">
+                ${issue.status}
+              </span>
+              <span style="font-size: 10px; color: #f59e0b; font-weight: bold;">
+                ★ ${issue.severity}
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 8px;">
+              Reported by ${issue.reporterName} (House ${issue.reporterHouse})
+            </div>
+            <button onclick="window.__jumpToIssue('${issue.id}')" style="width: 100%; background-color: #0f172a; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">
+              View Details
+            </button>
+          </div>
+        `;
+
+        L.marker([lat, lng], { icon: customIcon })
+          .addTo(map)
+          .bindPopup(popupContent);
+      });
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [activeTab, issues]);
+
+  const markNotifReadMutation = trpc.notification.read.useMutation();
+  const markAllReadMutation = trpc.notification.markAllRead.useMutation();
+  const analyzeMutation = trpc.issue.analyze.useMutation();
+  const reportMutation = trpc.issue.report.useMutation();
+  const validateMutation = trpc.issue.validate.useMutation();
+  const submitSurveyMutation = trpc.survey.submit.useMutation();
+  const assignMutation = trpc.issue.assign.useMutation();
+  const startMutation = trpc.issue.start.useMutation();
+  const resolveMutation = trpc.issue.resolve.useMutation();
+  const payMutation = trpc.issue.pay.useMutation();
+  const getPresignedUrlMutation = trpc.upload.getPresignedUrl.useMutation();
+
+  // Custom hooks encapsulates local upload helpers
+
+  // Mark notification read
+  const handleMarkNotifRead = async (id: string) => {
+    try {
+      await markNotifReadMutation.mutateAsync({ id });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      );
+      notificationsQuery.refetch();
+      toast.success("Notification marked as read");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to update notification");
+    }
+  };
+
+  // Bid comments discussion
+  const handleSendBidComment = async (e: React.FormEvent, bidId: string) => {
+    e.preventDefault();
+    if (bidCommentInput.trim().length === 0) return;
+    try {
+      await sendBidCommentMutation.mutateAsync({
+        bidId,
+        comment: bidCommentInput,
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to post comment.");
+    }
+  };
+
+  // Counter offer submission
+  const handleSendCounterOffer = async (bidId: string) => {
+    const amt = Number(counterAmountInput) || 0;
+    if (amt <= 0) {
+      toast.error("Please enter a valid counter offer quote amount.");
+      return;
+    }
+    try {
+      await counterBidMutation.mutateAsync({
+        id: bidId,
+        amount: amt,
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to propose counter offer.");
+    }
+  };
+
+  // Manual milestone timeline events
+  const handlePostManualTimelineEvent = async (
+    e: React.FormEvent,
+    issueId: string,
+  ) => {
+    e.preventDefault();
+    if (
+      manualTimelineTitle.trim().length < 3 ||
+      manualTimelineDesc.trim().length < 5
+    ) {
+      toast.error("Milestone title and description are required.");
+      return;
+    }
+    try {
+      await addTimelineEventMutation.mutateAsync({
+        issueId,
+        title: manualTimelineTitle,
+        description: manualTimelineDesc,
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to log timeline milestone.");
+    }
+  };
+
+  // Reopen resolved issue submission
+  const handleReopenIssueSubmit = async (
+    e: React.FormEvent,
+    issueId: string,
+  ) => {
+    e.preventDefault();
+    if (reopenReasonInput.trim().length < 5) {
+      toast.error(
+        "Please enter a detailed reason for reopening (at least 5 characters).",
+      );
+      return;
+    }
+    try {
+      await reopenIssueMutation.mutateAsync({
+        id: issueId,
+        reason: reopenReasonInput,
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reopen issue.");
+    }
+  };
+
+  // Issue Chat: Send message
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeIssueChatId || chatMessageInput.trim().length === 0) return;
+    try {
+      await sendChatMessageMutation.mutateAsync({
+        issueId: activeIssueChatId,
+        message: chatMessageInput,
+      });
+      setChatMessageInput("");
+      chatMessagesQuery.refetch();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send chat message.");
+    }
+  };
+
+  // Run AI analysis with Gemini
+  const handleAiAnalyze = async () => {
+    if (!reportTitle || !reportDesc) {
+      toast.error("Please provide a title and description to enable AI audit.");
+      return;
+    }
+    setAiLoading(true);
+    setAiAnalysis(null);
+    const toastId = toast.loading("Gemini AI conducting civic waste audit...");
+    try {
+      const data = await analyzeMutation.mutateAsync({
+        title: reportTitle,
+        description: reportDesc,
+      });
+      toast.success("Gemini audit complete! Recommendation generated.", {
+        id: toastId,
+      });
+      setAiAnalysis(data);
+      setManualCategory(data.category);
+      setManualSeverity(data.severity as any);
+      setManualWaste(data.wasteCaused);
+    } catch (err: any) {
+      toast.error(err.message || "AI analysis failed.", { id: toastId });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Geolocation locking
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser.");
+      return;
+    }
+    const toastId = toast.loading("Detecting current coordinates...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setReportLat(pos.coords.latitude.toFixed(6));
+        setReportLng(pos.coords.longitude.toFixed(6));
+        toast.success("Location coordinates successfully locked!", {
+          id: toastId,
+        });
+      },
+      (err) => {
+        toast.error("Failed to retrieve location coordinates automatically.", {
+          id: toastId,
+        });
+      },
+    );
+  };
+
+  // Follow/Unfollow toggle
+  const handleToggleFollow = async (issueId: string) => {
+    try {
+      const promise = toggleFollowMutation.mutateAsync({ id: issueId });
+      toast.promise(promise, {
+        loading: "Updating follow preferences...",
+        success: (updatedIssue) => {
+          const isFollowing = updatedIssue.followers.includes(user.id);
+          return isFollowing
+            ? "You are now following this issue!"
+            : "You stopped following this issue.";
+        },
+        error: "Failed to update follow preference.",
+      });
+      await promise;
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  // Broadcast announcements submit
+  const handleBroadcastSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (annTitle.trim().length < 5) {
+      toast.error("Announcement title must be at least 5 characters long.");
+      return;
+    }
+    if (annDesc.trim().length < 15) {
+      toast.error(
+        "Announcement description must be at least 15 characters long.",
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Scheduling utility announcement...");
+    try {
+      const areas = annAreas
+        ? annAreas
+            .split(",")
+            .map((a) => a.trim())
+            .filter(Boolean)
+        : [];
+      await createAnnouncementMutation.mutateAsync({
+        title: annTitle,
+        description: annDesc,
+        category: annCategory,
+        scheduledDate: annDate || undefined,
+        startTime: annStart || undefined,
+        endTime: annEnd || undefined,
+        affectedAreas: areas,
+      });
+      toast.success("Announcement successfully scheduled!", { id: toastId });
+      setAnnTitle("");
+      setAnnDesc("");
+      setAnnDate("");
+      setAnnStart("");
+      setAnnEnd("");
+      setAnnAreas("");
+      setActiveTab("issues");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to schedule announcement.", {
+        id: toastId,
+      });
+    }
+  };
+
+  // Profile settings helpers
+  const handleAutoGenerateUsername = () => {
+    const clean = profileName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const base = clean || "hero";
+    const rand = Math.floor(100 + Math.random() * 900);
+    setProfileUsername(`${base}_${rand}`);
+    toast.info("Suggested handle generated!");
+  };
+
+  const getDaysRemainingForResidency = () => {
+    if (!user.tenancyHistory || user.tenancyHistory.length === 0) return 0;
+    const sorted = [...user.tenancyHistory].sort(
+      (a, b) =>
+        new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime(),
+    );
+    const latest = sorted[0];
+    const diff = Date.now() - new Date(latest.changedAt).getTime();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    if (diff < weekMs) {
+      return Math.ceil((weekMs - diff) / (24 * 60 * 60 * 1000));
+    }
+    return 0;
+  };
+
+  const verifyClientSessionId = (sessionId: string): boolean => {
+    const token = localStorage.getItem("community_hero_token");
+    if (!token) return false;
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) return false;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.sessionId === sessionId;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Avatar image size must be less than 5MB.");
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarProgress(0);
+    const toastId = toast.loading("Preparing avatar upload...");
+
+    try {
+      const { uploadUrl, publicUrl, isLocal } =
+        await getPresignedUrlMutation.mutateAsync({
+          fileName: file.name,
+          contentType: file.type,
+        });
+
+      if (isLocal) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", uploadUrl);
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const percent = Math.round((evt.loaded / evt.total) * 100);
+            setAvatarProgress(percent);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText);
+            setProfileAvatar(response.url);
+            toast.success("Profile avatar uploaded successfully!", {
+              id: toastId,
+            });
+          } else {
+            toast.error("Failed to upload avatar to server.", { id: toastId });
+          }
+          setAvatarUploading(false);
+        };
+        xhr.onerror = () => {
+          toast.error("Avatar upload network connection error.", {
+            id: toastId,
+          });
+          setAvatarUploading(false);
+        };
+        xhr.send(formData);
+      } else {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.setRequestHeader(
+          "Cache-Control",
+          "public, max-age=31536000, immutable",
+        );
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const percent = Math.round((evt.loaded / evt.total) * 100);
+            setAvatarProgress(percent);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            setProfileAvatar(publicUrl);
+            toast.success("Profile avatar uploaded to CDN successfully!", {
+              id: toastId,
+            });
+          } else {
+            toast.error("Failed to upload avatar to CDN bucket.", {
+              id: toastId,
+            });
+          }
+          setAvatarUploading(false);
+        };
+        xhr.onerror = () => {
+          toast.error("CDN upload connection failed.", { id: toastId });
+          setAvatarUploading(false);
+        };
+        xhr.send(file);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate upload URL.", {
+        id: toastId,
+      });
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleProfileSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (profileName.trim().length < 2) {
+      toast.error("Name must be at least 2 characters long.");
+      return;
+    }
+
+    const cleanedHandle = profileUsername.trim().replace(/^@/, "");
+    if (cleanedHandle.length < 3) {
+      toast.error("Username handle must be at least 3 characters long.");
+      return;
+    }
+    if (!/^[a-z0-9_]+$/.test(cleanedHandle)) {
+      toast.error(
+        "Username handle can only contain lowercase letters, numbers, and underscores.",
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Updating profile settings...");
+    try {
+      const updatedUser = await updateProfileMutation.mutateAsync({
+        name: profileName,
+        username: cleanedHandle,
+        phone: profilePhone,
+        role: profileRole,
+        houseNumber: profileRole === "resident" ? profileHouse : undefined,
+        specialty: profileRole === "contractor" ? profileSpecialty : undefined,
+        avatarUrl: profileAvatar || undefined,
+        residenceType:
+          profileRole === "resident" && profileResidenceType
+            ? (profileResidenceType as any)
+            : undefined,
+        residenceStartDate:
+          profileRole === "resident" && profileResidenceStart
+            ? profileResidenceStart
+            : undefined,
+        capabilities:
+          profileRole === "contractor" ? profileCapabilities : undefined,
+      });
+
+      onUpdateUser(updatedUser as User);
+      toast.success("Profile settings saved successfully!", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update profile settings.", {
+        id: toastId,
+      });
+    }
+  };
+
+  const handleCampaignSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (campaignTitle.trim().length < 5) {
+      toast.error("Campaign title must be at least 5 characters.");
+      return;
+    }
+    if (campaignDesc.trim().length < 10) {
+      toast.error("Campaign description must be at least 10 characters.");
+      return;
+    }
+    if (!campaignDate) {
+      toast.error("Please specify a campaign date.");
+      return;
+    }
+    createCampaignMutation.mutate({
+      title: campaignTitle,
+      description: campaignDesc,
+      category: campaignCategory,
+      location: campaignLocation,
+      date: new Date(campaignDate).toISOString(),
+      maxAttendees: campaignMaxAttendees
+        ? parseInt(campaignMaxAttendees, 10)
+        : undefined,
+    });
+  };
+
+  // Submit new issue
+  const handleReportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // --- INLINE FORM VALIDATION ---
+    if (reportTitle.trim().length < 5) {
+      toast.error("Issue title must be at least 5 characters long.");
+      return;
+    }
+    if (reportDesc.trim().length < 15) {
+      toast.error(
+        "Please provide a detailed description (at least 15 characters).",
+      );
+      return;
+    }
+    if (uploadProgress !== null) {
+      toast.error(
+        "Please wait for your image/video attachments to finish uploading.",
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Broadcasting report to community hub...");
+    try {
+      const selectedCap = capabilities.find((c) => c.name === manualCategory);
+      await reportMutation.mutateAsync({
+        title: reportTitle,
+        description: reportDesc,
+        category: manualCategory,
+        capabilityId: selectedCap?.id,
+        severity: manualSeverity,
+        wasteCaused: manualWaste || "Resource leakage under evaluation.",
+        beforeImages: uploadedBeforeImages,
+        beforeVideos: uploadedBeforeVideos,
+        latitude: reportLat ? parseFloat(reportLat) : undefined,
+        longitude: reportLng ? parseFloat(reportLng) : undefined,
+      });
+      toast.success("Report published successfully!", { id: toastId });
+      setReportTitle("");
+      setReportDesc("");
+      setReportLat("");
+      setReportLng("");
+      setAiAnalysis(null);
+      resetBeforeUploads();
+      setActiveTab("issues");
+      issuesQuery.refetch();
+    } catch (err: any) {
+      toast.error(err.message || "Error reporting issue", { id: toastId });
+    }
+  };
+
+  // Community validation upvote
+  const handleVote = async (id: string) => {
+    try {
+      await validateMutation.mutateAsync({ id });
+      toast.success("Voted! Issue validated as active.");
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to submit validation vote.");
+    }
+  };
+
+  // Submit survey
+  const handleSurveySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSurveyError("");
+    setSurveySuccess(false);
+
+    // --- INLINE FORM VALIDATION ---
+    if (surveyFeedback.trim().length > 0 && surveyFeedback.trim().length < 10) {
+      toast.error("Written feedback must be at least 10 characters long.");
+      return;
+    }
+
+    const toastId = toast.loading("Submitting well-being metrics...");
+    try {
+      await submitSurveyMutation.mutateAsync({
+        overallHappiness: surveyHappiness,
+        localServicesRating: surveyServices,
+        roadQualityRating: surveyRoads,
+        cleanlinessRating: surveyCleanliness,
+        feedbackText: surveyFeedback,
+      });
+      toast.success("Well-being survey logged! Thank you.", { id: toastId });
+      setSurveySuccess(true);
+      setSurveyFeedback("");
+      if (user.role === "admin") {
+        surveysQuery.refetch();
+      }
+    } catch (err: any) {
+      const errMsg = err.message || "Failed to submit survey";
+      setSurveyError(errMsg);
+      toast.error(errMsg, { id: toastId });
+    }
+  };
+
+  // Contractor: Accept assignment
+  const handleAcceptAssignment = async (issueId: string) => {
+    const q = Number(priceQuoteInput) || 150;
+    if (q <= 0) {
+      toast.error("Please enter a positive repair quote amount.");
+      return;
+    }
+
+    const toastId = toast.loading("Accepting job assignment...");
+    try {
+      await assignMutation.mutateAsync({
+        id: issueId,
+        priceQuote: q,
+      });
+      toast.success("Job assigned successfully. Prepare for repair!", {
+        id: toastId,
+      });
+      setSelectedIssueForAction(null);
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to assign job.", { id: toastId });
+    }
+  };
+
+  // Contractor: Submit bid proposal
+  const handleSubmitBid = async (issueId: string) => {
+    const mat = Number(bidMaterialsCost) || 0;
+    const lab = Number(bidLaborCost) || 0;
+    const hrs = Number(bidEstimatedHours) || 1;
+    if (mat < 0 || lab < 0 || hrs < 1) {
+      toast.error("Please enter valid cost and hour breakdown values.");
+      return;
+    }
+    if (bidProposalNotes.trim().length < 5) {
+      toast.error(
+        "Please provide brief explanation notes (at least 5 characters).",
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Submitting bid proposal...");
+    try {
+      await submitBidMutation.mutateAsync({
+        issueId,
+        materialsCost: mat,
+        laborCost: lab,
+        estimatedHours: hrs,
+        proposalNotes: bidProposalNotes,
+      });
+      toast.success("Bid proposal submitted successfully!", { id: toastId });
+      setSelectedIssueForAction(null);
+      setBidProposalNotes("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit proposal.", { id: toastId });
+    }
+  };
+
+  // Contractor: Start progress
+  const handleStartProgress = async (issueId: string) => {
+    const toastId = toast.loading("Setting status to In Progress...");
+    try {
+      await startMutation.mutateAsync({ id: issueId });
+      toast.success("Job status set to 'In Progress'. Keep it up!", {
+        id: toastId,
+      });
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to start progress.", { id: toastId });
+    }
+  };
+
+  // Contractor: Resolve issue
+  const handleResolveIssue = async (issueId: string) => {
+    // --- INLINE FORM VALIDATION ---
+    if (resolutionNotesInput.trim().length < 10) {
+      toast.error(
+        "Resolution notes must specify actions taken (at least 10 characters).",
+      );
+      return;
+    }
+    if (uploadProgress !== null) {
+      toast.error(
+        "Please wait for proof uploads to complete before resolving.",
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Submitting repair resolution...");
+    try {
+      await resolveMutation.mutateAsync({
+        id: issueId,
+        resolutionNotes:
+          resolutionNotesInput || "Completed repair successfully.",
+        afterImages: uploadedAfterImages,
+        afterVideos: uploadedAfterVideos,
+      });
+      toast.success("Repair marked resolved! Payout request submitted.", {
+        id: toastId,
+      });
+      setSelectedIssueForAction(null);
+      setResolutionNotesInput("");
+      resetAfterUploads();
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to submit resolution.", {
+        id: toastId,
+      });
+    }
+  };
+
+  // Admin: Approve/Release Payment
+  const handleReleasePayment = async (issueId: string) => {
+    const toastId = toast.loading("Authorizing contractor payout...");
+    try {
+      await payMutation.mutateAsync({ id: issueId });
+      toast.success("Payment authorized and released to contractor account!", {
+        id: toastId,
+      });
+      issuesQuery.refetch();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to authorize payment.", {
+        id: toastId,
+      });
+    }
+  };
+
+  // Filters & search are managed by useIssueFilters hook
+
+  const unreadNotifs = notifications.filter((n) => !n.read).length;
+
+  // --- CHART DATA PREPARATION (Admin only) ---
+  const getCategoryChartData = () => {
+    const counts: { [key: string]: number } = {};
+    issues.forEach((i) => {
+      counts[i.category] = (counts[i.category] || 0) + 1;
+    });
+    return Object.keys(counts).map((cat) => ({
+      name: cat,
+      value: counts[cat],
+    }));
+  };
+
+  const getStatusChartData = () => {
+    const counts = {
+      Reported: 0,
+      Validated: 0,
+      Assigned: 0,
+      "In Progress": 0,
+      Resolved: 0,
+    };
+    issues.forEach((i) => {
+      if (i.status in counts) {
+        counts[i.status as keyof typeof counts]++;
+      }
+    });
+    return Object.keys(counts).map((st) => ({
+      name: st,
+      count: counts[st as keyof typeof counts],
+    }));
+  };
+
+  const getSurveyWellbeingData = () => {
+    if (adminSurveys.length === 0) return [];
+
+    // Group ratings by month
+    const monthsGroup: {
+      [key: string]: {
+        happiness: number[];
+        services: number[];
+        roads: number[];
+        cleanliness: number[];
+      };
+    } = {};
+    adminSurveys.forEach((s) => {
+      if (!monthsGroup[s.month]) {
+        monthsGroup[s.month] = {
+          happiness: [],
+          services: [],
+          roads: [],
+          cleanliness: [],
+        };
+      }
+      monthsGroup[s.month].happiness.push(s.overallHappiness);
+      monthsGroup[s.month].services.push(s.localServicesRating);
+      monthsGroup[s.month].roads.push(s.roadQualityRating);
+      monthsGroup[s.month].cleanliness.push(s.cleanlinessRating);
+    });
+
+    const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+    return Object.keys(monthsGroup).map((month) => ({
+      month,
+      Happiness: Number(avg(monthsGroup[month].happiness).toFixed(1)),
+      "Service Delivery": Number(avg(monthsGroup[month].services).toFixed(1)),
+      "Road Safety": Number(avg(monthsGroup[month].roads).toFixed(1)),
+      Sanitation: Number(avg(monthsGroup[month].cleanliness).toFixed(1)),
+    }));
+  };
+
+  const handleExportPaymentsCSV = () => {
+    if (allPayments.length === 0) {
+      toast.error("No payments recorded to export.");
+      return;
+    }
+    const headers = [
+      "Payment ID",
+      "Issue ID",
+      "Contractor ID",
+      "Contractor Name",
+      "Amount ($)",
+      "Payment Method",
+      "Payment Status",
+      "Authorized By ID",
+      "Authorized By Name",
+      "Date Created",
+      "Paid Date",
+    ];
+    const rows = allPayments.map((p) => [
+      p.id,
+      p.issueId,
+      p.contractorId,
+      `"${p.contractorName.replace(/"/g, '""')}"`,
+      p.amount,
+      p.method,
+      p.status,
+      p.authorizedById,
+      `"${p.authorizedByName.replace(/"/g, '""')}"`,
+      p.createdAt,
+      p.paidAt || "N/A",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `community_hero_payouts_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Payouts ledger exported successfully!");
+  };
+
+  const handleExportIssuesCSV = () => {
+    if (issues.length === 0) {
+      toast.error("No reports to export.");
+      return;
+    }
+    const headers = [
+      "Issue ID",
+      "Title",
+      "Description",
+      "Category",
+      "Severity",
+      "Status",
+      "Reporter ID",
+      "Reporter Name",
+      "Reporter House",
+      "Price Quote ($)",
+      "Is Paid",
+      "Days Unattended",
+      "Assigned Contractor Name",
+      "Latitude",
+      "Longitude",
+      "Created Date",
+    ];
+    const rows = issues.map((i) => [
+      i.id,
+      `"${i.title.replace(/"/g, '""')}"`,
+      `"${i.description.replace(/"/g, '""')}"`,
+      `"${i.category.replace(/"/g, '""')}"`,
+      i.severity,
+      i.status,
+      i.reporterId,
+      `"${i.reporterName.replace(/"/g, '""')}"`,
+      `"${i.reporterHouse.replace(/"/g, '""')}"`,
+      i.priceQuote || 0,
+      i.isPaid ? "TRUE" : "FALSE",
+      i.daysUnattended,
+      i.assignedContractorName
+        ? `"${i.assignedContractorName.replace(/"/g, '""')}"`
+        : "N/A",
+      i.latitude,
+      i.longitude,
+      i.createdAt,
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `community_hero_issues_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Neighborhood reports list exported successfully!");
+  };
+
+  const COLORS = [
+    "#14b8a6",
+    "#3b82f6",
+    "#f59e0b",
+    "#ef4444",
+    "#10b981",
+    "#8b5cf6",
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
+      {isOffline && (
+        <div className="bg-amber-500 text-white font-bold py-2 text-center text-xs flex items-center justify-center gap-2 shadow-md shrink-0 sticky top-0 z-999">
+          <AlertCircle className="h-4 w-4 shrink-0 animate-bounce" />
+          <span>
+            Offline Mode: Showing read-only cached view. Actions are disabled
+            until connection is restored.
+          </span>
+        </div>
+      )}
+      {/* Top Navigation */}
+      <header className="sticky top-0 z-40 h-14 bg-slate-900 text-white flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-emerald-500 rounded flex items-center justify-center font-bold text-lg text-slate-950">
+            W
+          </div>
+          <div>
+            <h1 className="text-sm font-extrabold tracking-tight text-white uppercase flex items-center gap-1.5 leading-none">
+              WARD<span className="text-emerald-400">WATCH</span>
+            </h1>
+            <span className="text-[9px] text-slate-400 font-mono tracking-widest uppercase">
+              Civic Action Terminal
+            </span>
+          </div>
+          <span className="hidden md:inline-block ml-4 px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-[9px] text-slate-400 uppercase tracking-widest font-mono">
+            Admin Terminal v2.4
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {/* Header Metrics */}
+          <div className="hidden lg:flex gap-4">
+            <div className="text-right">
+              <p className="text-[9px] text-slate-400 uppercase font-mono">
+                Civic Trust Score
+              </p>
+              <p className="text-emerald-400 font-mono text-xs font-bold">
+                84.2%
+              </p>
+            </div>
+            <div className="text-right border-l border-slate-700 pl-4">
+              <p className="text-[9px] text-slate-400 uppercase font-mono">
+                Active Tickets
+              </p>
+              <p className="text-emerald-400 font-mono text-xs font-bold">
+                {issues.filter((i) => i.status !== "Resolved").length}
+              </p>
+            </div>
+          </div>
+
+          {/* Notifications Center */}
+          <div className="relative border-l border-slate-700 pl-4" ref={notificationsRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded relative transition-all"
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadNotifs > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-emerald-500 text-slate-950 font-extrabold text-[9px] h-3.5 min-w-3.5 px-0.5 rounded-full flex items-center justify-center border border-slate-900">
+                  {unreadNotifs}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-300 rounded shadow-xl p-4 max-h-96 overflow-y-auto z-50 text-slate-900">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                    Notifications Feed
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        markAllReadMutation.mutate(
+                          { userId: user.id },
+                          {
+                            onSuccess: () => notificationsQuery.refetch(),
+                          },
+                        );
+                      }}
+                      className="text-[10px] font-mono text-emerald-600 hover:text-emerald-500 font-bold"
+                    >
+                      Mark All Read
+                    </button>
+                    <button
+                      onClick={() => setShowNotifications(false)}
+                      className="text-[10px] font-mono text-slate-500 hover:text-emerald-600"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+                {notifications.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4 font-mono">
+                    No notifications yet.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        onClick={() => {
+                          handleMarkNotifRead(notif.id);
+                          if (
+                            notif.targetIssueId &&
+                            (window as any).__jumpToIssue
+                          ) {
+                            setShowNotifications(false);
+                            (window as any).__jumpToIssue(notif.targetIssueId);
+                          }
+                        }}
+                        className={`p-2 rounded border text-left cursor-pointer transition-all ${
+                          notif.read
+                            ? "bg-slate-50 border-slate-200 text-slate-500"
+                            : "bg-emerald-50/50 border-emerald-300 text-slate-800 hover:border-emerald-400"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold flex items-center gap-1">
+                          {!notif.read && (
+                            <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0"></span>
+                          )}
+                          {notif.title}
+                        </p>
+                        <p className="text-[11px] mt-1 leading-relaxed">
+                          {notif.message}
+                        </p>
+                        <span className="text-[9px] text-slate-500 font-mono block mt-1.5">
+                          {new Date(notif.createdAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* User Profile Info Tag */}
+          <div
+            className="hidden sm:flex items-center gap-2 border-l border-slate-700 pl-4 cursor-pointer hover:opacity-85 transition-all"
+            onClick={() => setActiveTab("profile")}
+          >
+            {user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className="w-7 h-7 rounded-full object-cover border border-slate-600 shadow-sm"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-emerald-400 font-mono">
+                {user.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="text-[11px] text-left">
+              <div className="flex items-center gap-1.5">
+                <p className="font-semibold text-slate-200">{user.name}</p>
+                {user.points > 0 && (
+                  <span className="text-[8px] bg-emerald-950/80 text-emerald-400 border border-emerald-900 px-1 rounded-sm font-mono font-bold leading-none py-0.5">
+                    {user.points} XP
+                  </span>
+                )}
+              </div>
+              <p className="text-[9px] text-slate-400 font-mono leading-none mt-0.5">
+                @{user.username || `user_${user.id}`} •{" "}
+                {user.role === "resident"
+                  ? user.residenceType === "owner"
+                    ? "Homeowner"
+                    : user.residenceType === "renter"
+                      ? "Tenant"
+                      : "Resident"
+                  : user.role}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onLogout}
+            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition-all pl-4"
+            title="Log out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Sub-Nav & Layout Container */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row gap-4">
+        {/* Responsive Sidebar for Tab Selector */}
+        <aside className="hidden md:flex md:w-64 shrink-0 flex-col gap-1.5">
+          <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase px-2 mb-1">
+            Navigation Menu
+          </p>
+
+          {/* Universal tabs */}
+          <button
+            onClick={() => setActiveTab("issues")}
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+              activeTab === "issues"
+                ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+            }`}
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            Issues Hub
+          </button>
+
+          <button
+            onClick={() => setActiveTab("campaigns")}
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+              activeTab === "campaigns"
+                ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+            }`}
+          >
+            <Megaphone className="h-3.5 w-3.5" />
+            Campaigns & Events
+          </button>
+
+          {/* Resident Specific Tabs */}
+          {user.role === "resident" && (
+            <>
+              <button
+                onClick={() => setActiveTab("report")}
+                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                  activeTab === "report"
+                    ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+                }`}
+              >
+                <PlusCircle className="h-3.5 w-3.5" />
+                Report New Issue
+              </button>
+              <button
+                onClick={() => setActiveTab("survey")}
+                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                  activeTab === "survey"
+                    ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Monthly Well-being Survey
+              </button>
+            </>
+          )}
+
+          {/* Contractor Specific Tab */}
+          {user.role === "contractor" && (
+            <button
+              onClick={() => setActiveTab("contractor")}
+              className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                activeTab === "contractor"
+                  ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+              }`}
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              Contractor Workroom
+            </button>
+          )}
+
+          {/* Admin Specific Tabs */}
+          {user.role === "admin" && (
+            <>
+              <button
+                onClick={() => setActiveTab("admin-dashboard")}
+                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                  activeTab === "admin-dashboard"
+                    ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+                }`}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                Governance & Analytics
+              </button>
+              <button
+                onClick={() => setActiveTab("admin-surveys")}
+                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                  activeTab === "admin-surveys"
+                    ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+                }`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Resident Well-being Inbox
+              </button>
+              <button
+                onClick={() => setActiveTab("admin-announcements")}
+                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+                  activeTab === "admin-announcements"
+                    ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+                }`}
+              >
+                <Megaphone className="h-3.5 w-3.5" />
+                Alert Broadcast Console
+              </button>
+            </>
+          )}
+
+          {/* Universal PWA Tabs */}
+          <button
+            onClick={() => setActiveTab("map")}
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+              activeTab === "map"
+                ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+            }`}
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            Hyperlocal Map Hub
+          </button>
+
+          <button
+            onClick={() => setActiveTab("leaderboard")}
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+              activeTab === "leaderboard"
+                ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+            }`}
+          >
+            <Award className="h-3.5 w-3.5" />
+            Civic Leaderboard
+          </button>
+
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded transition-all ${
+              activeTab === "profile"
+                ? "bg-slate-900 text-white border border-slate-700 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent"
+            }`}
+          >
+            <UserCheck className="h-3.5 w-3.5" />
+            My Profile Settings
+          </button>
+
+          {/* Hero Stats Card Widget */}
+          <div className="mt-4 bg-white border border-slate-300 rounded p-3 text-left hidden md:block shadow-sm">
+            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Community Statistics
+            </h4>
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500">Unresolved Issues</span>
+                <span className="font-bold text-slate-900 font-mono">
+                  {issues.filter((i) => i.status !== "Resolved").length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500">Resolved to Date</span>
+                <span className="font-bold text-slate-900 font-mono">
+                  {issues.filter((i) => i.status === "Resolved").length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500">Active Handymen</span>
+                <span className="font-bold text-slate-900 font-mono">
+                  5 Registered
+                </span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="flex-1 min-w-0 pb-16 md:pb-0">
+          {/* TAB 1: ISSUES HUB */}
+          {activeTab === "issues" && (
+            <div className="space-y-4">
+              {/* Header section with search */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                    Active Hyperlocal Reports
+                  </h2>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    Review, validate, and follow resolving progress of
+                    neighborhood requests.
+                  </p>
+                </div>
+                {user.role === "resident" && (
+                  <button
+                    onClick={() => setActiveTab("report")}
+                    className="flex items-center gap-1.5 bg-slate-900 text-white hover:bg-slate-800 font-semibold px-3 py-1.5 rounded text-xs transition-all cursor-pointer shadow-sm"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    Report Issue
+                  </button>
+                )}
+              </div>
+
+              {/* Official Utility Alerts Ticker */}
+              {announcements.length > 0 && (
+                <div className="bg-amber-50/70 border border-amber-300/60 rounded p-4 space-y-2 text-left animate-fadeIn">
+                  <div className="flex items-center gap-2 text-amber-900">
+                    <Megaphone className="h-4.5 w-4.5 text-amber-700 shrink-0" />
+                    <h3 className="font-bold text-xs uppercase tracking-wider">
+                      Official Utility Alerts & Outages
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {announcements.map((ann) => (
+                      <div
+                        key={ann.id}
+                        className="bg-white border border-amber-200 rounded p-3 text-xs space-y-1.5 flex flex-col justify-between shadow-sm relative"
+                      >
+                        <div>
+                          <div className="flex justify-between items-start gap-2">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider shrink-0 ${
+                                ann.category === "Water Cut"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : ann.category === "Electricity Outage"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : ann.category === "Garbage Collection"
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : "bg-slate-100 text-slate-800"
+                              }`}
+                            >
+                              {ann.category}
+                            </span>
+                            {user.role === "admin" && (
+                              <button
+                                onClick={() => {
+                                  if (confirm("Delete this utility alert?")) {
+                                    deleteAnnouncementMutation.mutate({
+                                      id: ann.id,
+                                    });
+                                  }
+                                }}
+                                className="text-slate-400 hover:text-red-650 font-mono text-[9px] transition-colors"
+                              >
+                                Delete ✕
+                              </button>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-slate-850 mt-1">
+                            {ann.title}
+                          </h4>
+                          <p className="text-slate-600 text-[11px] leading-relaxed font-sans">
+                            {ann.description}
+                          </p>
+                        </div>
+                        <div className="border-t border-slate-100 pt-1.5 mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                          {ann.scheduledDate && (
+                            <div>
+                              <strong>Scheduled:</strong> {ann.scheduledDate}{" "}
+                              {ann.startTime &&
+                                `${ann.startTime} - ${ann.endTime}`}
+                            </div>
+                          )}
+                          {ann.affectedAreas &&
+                            ann.affectedAreas.length > 0 && (
+                              <div>
+                                <strong>Affected:</strong>{" "}
+                                {ann.affectedAreas.join(", ")}
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Status filtering pills */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {[
+                  {
+                    name: "All Reports",
+                    value: "All",
+                    color: "bg-slate-100 text-slate-800 border-slate-200",
+                  },
+                  {
+                    name: "Reported",
+                    value: "Reported",
+                    color: "bg-blue-50 text-blue-800 border-blue-200",
+                  },
+                  {
+                    name: "Validated",
+                    value: "Validated",
+                    color: "bg-purple-50 text-purple-800 border-purple-200",
+                  },
+                  {
+                    name: "Assigned",
+                    value: "Assigned",
+                    color: "bg-indigo-50 text-indigo-800 border-indigo-200",
+                  },
+                  {
+                    name: "In Progress",
+                    value: "In Progress",
+                    color: "bg-amber-50 text-amber-800 border-amber-200",
+                  },
+                  {
+                    name: "Resolved",
+                    value: "Resolved",
+                    color: "bg-emerald-50 text-emerald-800 border-emerald-200",
+                  },
+                ].map((pill) => {
+                  const isActive = filterStatus === pill.value;
+                  const count =
+                    pill.value === "All"
+                      ? issues.length
+                      : issues.filter((i) => i.status === pill.value).length;
+                  return (
+                    <button
+                      key={pill.value}
+                      type="button"
+                      onClick={() => setFilterStatus(pill.value)}
+                      className={`flex items-center gap-1.5 shrink-0 px-3.5 py-1.5 rounded-full border text-[11px] font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-slate-900 border-slate-900 text-white shadow-sm"
+                          : `${pill.color} hover:brightness-[0.98]`
+                      }`}
+                    >
+                      <span>{pill.name}</span>
+                      <span
+                        className={`text-[9px] py-0.25 px-1.5 rounded-full font-mono font-bold ${
+                          isActive
+                            ? "bg-white/20 text-white"
+                            : "bg-white text-slate-700 shadow-sm border border-slate-100"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Filtering Interface */}
+              <div className="bg-white border border-slate-300 p-3 rounded flex flex-col sm:flex-row gap-3 items-center shadow-sm">
+                <div className="relative w-full sm:flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search issues, descriptions, houses..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded pl-8 pr-3 py-1.5 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                  />
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:flex-none">
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    >
+                      <option value="All">All Categories</option>
+                      {capabilityGroups.map((group) => (
+                        <optgroup key={group.id} label={group.name}>
+                          {(group.capabilities || []).map((cap: any) => (
+                            <option key={cap.id} value={cap.name}>
+                              {cap.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 sm:flex-none">
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="Reported">Reported</option>
+                      <option value="Validated">Validated</option>
+                      <option value="Assigned">Assigned</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Resolved">Resolved</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 sm:flex-none">
+                    <select
+                      value={sortBy}
+                      onChange={(e: any) => setSortBy(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans font-semibold text-slate-700"
+                    >
+                      <option value="date">Sort by Date</option>
+                      <option value="severity">Sort by Severity</option>
+                      <option value="unattended">
+                        Sort by Days Unattended
+                      </option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded shrink-0 self-stretch sm:self-auto">
+                    <input
+                      type="checkbox"
+                      id="show-duplicates-checkbox"
+                      checked={showDuplicates}
+                      onChange={(e) => setShowDuplicates(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-650 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label
+                      htmlFor="show-duplicates-checkbox"
+                      className="text-[11px] text-slate-700 select-none cursor-pointer font-medium"
+                    >
+                      Show Duplicates
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid representation */}
+              {filteredIssues.length === 0 ? (
+                <div className="bg-white border border-slate-300 rounded p-10 text-center shadow-sm">
+                  <AlertTriangle className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                  <h3 className="font-bold text-sm text-slate-900">
+                    No Issues Found
+                  </h3>
+                  <p className="text-slate-500 text-xs max-w-xs mx-auto mt-1">
+                    There are no reports matching your search or filter
+                    configuration. Check back later!
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                  {filteredIssues.map((issue) => {
+                    const statusColors = {
+                      Reported:
+                        "bg-amber-50 border-amber-300 text-amber-700 text-[10px]",
+                      Validated:
+                        "bg-blue-50 border-blue-300 text-blue-700 text-[10px]",
+                      Assigned:
+                        "bg-purple-50 border-purple-300 text-purple-700 text-[10px]",
+                      "In Progress":
+                        "bg-sky-50 border-sky-300 text-sky-700 text-[10px]",
+                      Resolved:
+                        "bg-emerald-50 border-emerald-300 text-emerald-700 text-[10px]",
+                    };
+
+                    const isUpvoted = issue.upvotes.includes(user.id);
+                    const potDup = findPotentialDuplicate(issue);
+
+                    return (
+                      <div
+                        key={issue.id}
+                        id={`issue-card-${issue.id}`}
+                        className="bg-white border border-slate-300 rounded p-4 hover:border-slate-400 hover:bg-slate-50/40 transition-all flex flex-col justify-between shadow-sm"
+                      >
+                        <div>
+                          {/* Top tags */}
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase">
+                              ID: {issue.displayId || issue.id.substring(0, 8)}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-bold border ${statusColors[issue.status]}`}
+                            >
+                              {issue.status}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <h3 className="font-bold text-sm text-slate-900 leading-snug">
+                            {issue.title}
+                          </h3>
+
+                          {/* Sub info */}
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 font-medium">
+                            <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                            <span>House {issue.reporterHouse}</span>
+                            <span>
+                              Reporter:{" "}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUserClick(issue.reporterId);
+                                }}
+                                className="underline text-emerald-600 hover:text-emerald-700 cursor-pointer font-bold transition-all"
+                              >
+                                {issue.reporterName}
+                              </span>
+                            </span>
+                          </div>
+
+                          {/* Description */}
+                          <p className="text-slate-600 text-xs mt-2 leading-relaxed">
+                            {issue.description}
+                          </p>
+
+                          {/* Linked Duplicate or Potential Duplicate notifications */}
+                          {issue.duplicateOfIssueId && (
+                            <div className="bg-amber-50 border border-amber-200 rounded p-2 text-[10px] text-amber-800 mt-2 font-mono flex justify-between items-center">
+                              <span>
+                                🔗 Linked Duplicate of Report #
+                                {issues.find(
+                                  (i) => i.id === issue.duplicateOfIssueId,
+                                )?.displayId ||
+                                  issue.duplicateOfIssueId.substring(0, 8)}
+                              </span>
+                              {user.role === "admin" && (
+                                <button
+                                  onClick={() =>
+                                    handleMarkAsDuplicate(issue.id, null)
+                                  }
+                                  className="text-red-600 hover:underline font-bold font-sans cursor-pointer"
+                                >
+                                  Unlink
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {!issue.duplicateOfIssueId &&
+                            potDup &&
+                            user.role === "admin" && (
+                              <div className="bg-red-50 border border-red-200 rounded p-2 text-[10px] text-red-800 flex items-center justify-between mt-2 font-sans">
+                                <span>
+                                  ⚠️ Nearby matching report detected: #
+                                  {potDup.displayId ||
+                                    potDup.id.substring(0, 8)}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    handleMarkAsDuplicate(issue.id, potDup.id)
+                                  }
+                                  className="bg-red-650 hover:bg-red-750 text-white font-extrabold px-2 py-0.5 rounded text-[9px] shadow cursor-pointer transition-all"
+                                >
+                                  Link Duplicate
+                                </button>
+                              </div>
+                            )}
+
+                          {/* Media attachments */}
+                          {(issue.beforeImages.length > 0 ||
+                            issue.beforeVideos.length > 0) && (
+                            <div className="mt-3 space-y-2">
+                              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                                Before Repair Media:
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {issue.beforeImages.map((url, i) => (
+                                  <div
+                                    key={i}
+                                    className="rounded overflow-hidden border border-slate-200 bg-slate-100 max-h-32 flex justify-center items-center"
+                                  >
+                                    <img
+                                      src={url}
+                                      alt={`Before Repair ${i + 1}`}
+                                      className="max-w-full max-h-32 object-contain"
+                                    />
+                                  </div>
+                                ))}
+                                {issue.beforeVideos.map((url, i) => (
+                                  <div
+                                    key={i}
+                                    className="rounded overflow-hidden border border-slate-200 bg-slate-100 max-h-32 col-span-2"
+                                  >
+                                    <video
+                                      src={url}
+                                      controls
+                                      className="w-full max-h-32 object-contain"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {issue.status === "Resolved" &&
+                            (issue.afterImages.length > 0 ||
+                              issue.afterVideos.length > 0) && (
+                              <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
+                                <div className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider flex items-center gap-1">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> After
+                                  Repair Proof:
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {issue.afterImages.map((url, i) => (
+                                    <div
+                                      key={i}
+                                      className="rounded overflow-hidden border border-slate-200 bg-emerald-50 max-h-32 flex justify-center items-center"
+                                    >
+                                      <img
+                                        src={url}
+                                        alt={`After Repair ${i + 1}`}
+                                        className="max-w-full max-h-32 object-contain"
+                                      />
+                                    </div>
+                                  ))}
+                                  {issue.afterVideos.map((url, i) => (
+                                    <div
+                                      key={i}
+                                      className="rounded overflow-hidden border border-slate-200 bg-emerald-50 max-h-32 col-span-2"
+                                    >
+                                      <video
+                                        src={url}
+                                        controls
+                                        className="w-full max-h-32 object-contain"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Impact Metrics box */}
+                          <div className="mt-3 bg-slate-50 border border-slate-200 rounded p-2.5 space-y-1.5 text-xs">
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 flex items-center gap-1 text-[11px]">
+                                <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+                                Category / Severity:
+                              </span>
+                              <span className="font-semibold text-slate-800 text-[11px]">
+                                {issue.category} •{" "}
+                                <span
+                                  className={
+                                    issue.severity === "Critical" ||
+                                    issue.severity === "High"
+                                      ? "text-red-600 font-bold"
+                                      : "text-slate-700"
+                                  }
+                                >
+                                  {issue.severity}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4">
+                              <span className="text-slate-500 shrink-0 flex items-center gap-1 text-[11px]">
+                                <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                                Days Unattended:
+                              </span>
+                              <span className="font-mono text-slate-700 text-right text-[11px]">
+                                {issue.status === "Resolved"
+                                  ? "Resolved"
+                                  : `${issue.daysUnattended} days unaddressed`}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 pt-1 border-t border-slate-200">
+                              <span className="text-slate-500 shrink-0 text-[11px]">
+                                Wasted Resources:
+                              </span>
+                              <span className="font-bold text-emerald-600 text-right text-[11px] font-mono">
+                                {issue.wasteCaused}
+                              </span>
+                            </div>
+
+                            {issue.assignedContractorName && (
+                              <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                                <span className="text-slate-500 flex items-center gap-1 text-[11px]">
+                                  <UserCheck className="h-3 w-3 text-emerald-600 shrink-0" />
+                                  Assigned Service:
+                                </span>
+                                <span className="font-semibold text-emerald-700 text-[11px]">
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (issue.assignedContractorId) {
+                                        handleUserClick(
+                                          issue.assignedContractorId,
+                                        );
+                                      }
+                                    }}
+                                    className="underline text-emerald-700 hover:text-emerald-800 cursor-pointer font-bold transition-all"
+                                  >
+                                    {issue.assignedContractorName}
+                                  </span>{" "}
+                                  {issue.priceQuote
+                                    ? `($${issue.priceQuote})`
+                                    : ""}
+                                </span>
+                              </div>
+                            )}
+
+                            {issue.resolutionNotes && (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded p-2 mt-2 text-[10px]">
+                                <span className="font-bold text-emerald-700">
+                                  Resolution Notes:
+                                </span>
+                                <p className="text-slate-600 mt-0.5">
+                                  {issue.resolutionNotes}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Payment Status Display */}
+                            {(() => {
+                              const issuePayment = allPayments.find(
+                                (p: any) => p.issueId === issue.id,
+                              );
+                              if (
+                                issue.status === "Resolved" &&
+                                (issue.isPaid || issuePayment)
+                              ) {
+                                return (
+                                  <div
+                                    className={`mt-2 p-2 border rounded flex items-center justify-between text-[10px] ${
+                                      issuePayment?.status === "Overdue"
+                                        ? "bg-red-50 border-red-200"
+                                        : issuePayment?.status === "Paid"
+                                          ? "bg-emerald-50 border-emerald-200"
+                                          : "bg-amber-50 border-amber-200"
+                                    }`}
+                                  >
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <DollarSign className="h-3 w-3" />
+                                        Payment Status:{" "}
+                                        {issuePayment
+                                          ? issuePayment.status
+                                          : "Processing"}
+                                      </span>
+                                      {issuePayment?.status === "Overdue" && (
+                                        <span className="text-red-600 font-bold flex items-center gap-1 mt-0.5">
+                                          <AlertTriangle className="h-3 w-3" />{" "}
+                                          Warning: Payment Overdue
+                                        </span>
+                                      )}
+                                    </div>
+                                    {issuePayment?.proofUrl && (
+                                      <a
+                                        href={issuePayment.proofUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-indigo-600 hover:underline font-bold"
+                                      >
+                                        View Proof
+                                      </a>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* Contractor Rating & Review Panel */}
+                            {issue.status === "Resolved" &&
+                              issue.assignedContractorId &&
+                              user.id === issue.reporterId &&
+                              !issue.isReviewed && (
+                                <div className="bg-indigo-50/50 border border-indigo-200 rounded p-3 mt-3 text-left space-y-2">
+                                  <span className="font-bold text-indigo-900 text-[10px] uppercase tracking-wider block">
+                                    ⭐ Rate & Review Contractor
+                                  </span>
+                                  {reviewingIssueId === issue.id ? (
+                                    <div className="space-y-2.5">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[10px] text-slate-500 font-semibold mr-1">
+                                          Rating:
+                                        </span>
+                                        {[1, 2, 3, 4, 5].map((star) => (
+                                          <button
+                                            key={star}
+                                            type="button"
+                                            onClick={() => setRatingInput(star)}
+                                            className={`text-base transition-colors ${
+                                              star <= ratingInput
+                                                ? "text-amber-500"
+                                                : "text-slate-350 hover:text-slate-400"
+                                            }`}
+                                          >
+                                            ★
+                                          </button>
+                                        ))}
+                                      </div>
+                                      <textarea
+                                        value={commentInput}
+                                        onChange={(e) =>
+                                          setCommentInput(e.target.value)
+                                        }
+                                        placeholder="Write a brief comment about the repair job (min 5 chars)..."
+                                        className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-800 focus:outline-none focus:border-slate-500 resize-none font-sans"
+                                        rows={2}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => {
+                                            if (ratingInput < 1) {
+                                              toast.error(
+                                                "Please select a rating between 1 and 5 stars.",
+                                              );
+                                              return;
+                                            }
+                                            if (
+                                              commentInput.trim().length < 5
+                                            ) {
+                                              toast.error(
+                                                "Please enter a review comment of at least 5 characters.",
+                                              );
+                                              return;
+                                            }
+                                            submitReviewMutation.mutate({
+                                              issueId: issue.id,
+                                              contractorId:
+                                                issue.assignedContractorId!,
+                                              rating: ratingInput,
+                                              comment: commentInput,
+                                            });
+                                          }}
+                                          disabled={
+                                            submitReviewMutation.isPending
+                                          }
+                                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded text-[10px] transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                                        >
+                                          Submit Rating
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setReviewingIssueId(null)
+                                          }
+                                          className="bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold px-3 py-1 rounded text-[10px] transition-all cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setReviewingIssueId(issue.id);
+                                        setRatingInput(0);
+                                        setCommentInput("");
+                                      }}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-[10px] transition-all cursor-pointer shadow flex items-center gap-1.5"
+                                    >
+                                      <span>Rate & Review Contractor</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                            {/* Already Reviewed indicator */}
+                            {issue.status === "Resolved" &&
+                              issue.isReviewed && (
+                                <div className="bg-indigo-50 border border-indigo-150 rounded p-2.5 mt-2.5 text-[10px] text-indigo-900 font-medium">
+                                  🌟 You have submitted a review rating for this
+                                  repair.
+                                </div>
+                              )}
+                          </div>
+                        </div>
+
+                        {/* Actions line */}
+                        <div className="mt-4 pt-3 border-t border-slate-200 flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                onClick={() => handleVote(issue.id)}
+                                disabled={isOffline}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isUpvoted
+                                    ? "bg-emerald-600 border-emerald-700 text-white shadow-sm"
+                                    : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                }`}
+                              >
+                                <ThumbsUp className="h-3 w-3" />
+                                <span>
+                                  {isUpvoted ? "Validated" : "Validate"} (
+                                  {issue.upvotes.length})
+                                </span>
+                              </button>
+
+                              <button
+                                onClick={() => handleToggleFollow(issue.id)}
+                                disabled={isOffline}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  (issue.followers || []).includes(user.id)
+                                    ? "bg-slate-900 border-slate-950 text-white shadow-sm"
+                                    : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                }`}
+                              >
+                                <Bell className="h-3 w-3" />
+                                <span>
+                                  {(issue.followers || []).includes(user.id)
+                                    ? "Following"
+                                    : "Follow"}{" "}
+                                  ({(issue.followers || []).length})
+                                </span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  if (navigator.share) {
+                                    navigator
+                                      .share({
+                                        title: `WardWatch: ${issue.title}`,
+                                        text: `Check out this civic issue reported in our area: ${issue.title}`,
+                                        url: `${window.location.origin}${window.location.pathname}?issueId=${issue.id}`,
+                                      })
+                                      .catch((error) =>
+                                        console.log("Error sharing", error),
+                                      );
+                                  } else {
+                                    navigator.clipboard.writeText(
+                                      `${window.location.origin}${window.location.pathname}?issueId=${issue.id}`,
+                                    );
+                                    toast.success("Link copied to clipboard!");
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                              >
+                                <Share2 className="h-3 w-3" />
+                                <span>Share</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setActiveIssueChatId(
+                                    activeIssueChatId === issue.id
+                                      ? null
+                                      : issue.id,
+                                  );
+                                  setSelectedIssueForBids(null);
+                                  setExpandedTimelineIssueId(null);
+                                  setShowReopenDialogForIssue(null);
+                                }}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                  activeIssueChatId === issue.id
+                                    ? "bg-indigo-650 border-indigo-700 text-white shadow-sm"
+                                    : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                }`}
+                              >
+                                <MessageSquare className="h-3 w-3" />
+                                <span>Chat collaboration</span>
+                              </button>
+
+                              {!issue.assignedContractorId &&
+                                (issue.reporterId === user.id ||
+                                  user.role === "admin") && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedIssueForBids(
+                                        selectedIssueForBids === issue.id
+                                          ? null
+                                          : issue.id,
+                                      );
+                                      setActiveIssueChatId(null);
+                                      setExpandedTimelineIssueId(null);
+                                      setShowReopenDialogForIssue(null);
+                                    }}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                      selectedIssueForBids === issue.id
+                                        ? "bg-emerald-600 border-emerald-700 text-white shadow-sm"
+                                        : "bg-white border-slate-300 text-slate-650 hover:text-slate-900 hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    <DollarSign className="h-3 w-3" />
+                                    <span>Proposals</span>
+                                  </button>
+                                )}
+
+                              <button
+                                onClick={() => {
+                                  setExpandedTimelineIssueId(
+                                    expandedTimelineIssueId === issue.id
+                                      ? null
+                                      : issue.id,
+                                  );
+                                  setActiveIssueChatId(null);
+                                  setSelectedIssueForBids(null);
+                                  setShowReopenDialogForIssue(null);
+                                }}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                  expandedTimelineIssueId === issue.id
+                                    ? "bg-slate-700 border-slate-800 text-white shadow-sm"
+                                    : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                }`}
+                              >
+                                <Clock className="h-3 w-3" />
+                                <span>Timeline</span>
+                              </button>
+
+                              {issue.status === "Resolved" &&
+                                (issue.reporterId === user.id ||
+                                  user.role === "admin") && (
+                                  <button
+                                    onClick={() => {
+                                      setShowReopenDialogForIssue(
+                                        showReopenDialogForIssue === issue.id
+                                          ? null
+                                          : issue.id,
+                                      );
+                                      setActiveIssueChatId(null);
+                                      setSelectedIssueForBids(null);
+                                      setExpandedTimelineIssueId(null);
+                                      setReopenReasonInput("");
+                                    }}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                      showReopenDialogForIssue === issue.id
+                                        ? "bg-red-650 border-red-750 text-white shadow-sm"
+                                        : "bg-red-50 border-red-200 text-red-650 hover:bg-red-100"
+                                    }`}
+                                  >
+                                    <AlertCircle className="h-3 w-3" />
+                                    <span>Reopen Issue</span>
+                                  </button>
+                                )}
+                            </div>
+
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {new Date(issue.createdAt).toLocaleDateString()}
+                            </div>
+                          </div>
+
+                          {/* Reopen Dialog Box */}
+                          {showReopenDialogForIssue === issue.id && (
+                            <form
+                              onSubmit={(e) =>
+                                handleReopenIssueSubmit(e, issue.id)
+                              }
+                              className="p-3 bg-red-50/70 border border-red-200 rounded-lg space-y-2 text-left animate-fadeIn font-sans"
+                            >
+                              <div className="text-[11px] font-bold text-red-800 flex items-center gap-1">
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{" "}
+                                Reopen Report
+                              </div>
+                              <p className="text-[10px] text-red-700 leading-relaxed">
+                                Please explain what is wrong or why the repair
+                                needs to be addressed again:
+                              </p>
+                              <textarea
+                                required
+                                rows={2}
+                                value={reopenReasonInput}
+                                onChange={(e) =>
+                                  setReopenReasonInput(e.target.value)
+                                }
+                                placeholder="e.g. Water is leaking again from the exact same pipeline joint after contractor left..."
+                                className="w-full bg-white border border-red-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-400"
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowReopenDialogForIssue(null)
+                                  }
+                                  className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-500 font-bold px-2.5 py-1 rounded text-[10px]"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="bg-red-600 text-white font-bold px-3 py-1 rounded text-[10px] hover:bg-red-700 shadow-sm"
+                                >
+                                  Reopen Report
+                                </button>
+                              </div>
+                            </form>
+                          )}
+
+                          {/* Expanded Chat Room Drawer */}
+                          {activeIssueChatId === issue.id && (
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-left animate-fadeIn">
+                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                                <MessageSquare className="h-3.5 w-3.5 text-indigo-600 shrink-0" />{" "}
+                                Collaboration Chat room
+                              </h4>
+                              <div className="max-h-[180px] overflow-y-auto space-y-2 pr-1 py-1 font-sans">
+                                {chatMessagesQuery.isLoading ? (
+                                  <p className="text-[10px] text-slate-400 italic">
+                                    Syncing message logs...
+                                  </p>
+                                ) : chatMessages.length === 0 ? (
+                                  <p className="text-[10px] text-slate-400 italic">
+                                    No chat coordination messages posted yet.
+                                    Start the conversation!
+                                  </p>
+                                ) : (
+                                  chatMessages.map((msg: any) => {
+                                    const isSelf = msg.senderId === user.id;
+                                    return (
+                                      <div
+                                        key={msg.id}
+                                        className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
+                                      >
+                                        <div
+                                          className={`p-2 rounded max-w-[85%] text-[11px] leading-relaxed shadow-sm ${
+                                            isSelf
+                                              ? "bg-indigo-600 text-white"
+                                              : "bg-white border border-slate-200 text-slate-800"
+                                          }`}
+                                        >
+                                          <div className="flex justify-between items-center gap-2 mb-0.5 text-[8px] opacity-75 font-mono">
+                                            <span className="font-bold">
+                                              {msg.senderName} ({msg.senderRole}
+                                              )
+                                            </span>
+                                            <span>
+                                              {new Date(
+                                                msg.createdAt,
+                                              ).toLocaleTimeString([], {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              })}
+                                            </span>
+                                          </div>
+                                          <p>{msg.message}</p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                              <form
+                                onSubmit={handleSendChatMessage}
+                                className="flex gap-2 pt-2 border-t border-slate-200"
+                              >
+                                <input
+                                  type="text"
+                                  required
+                                  value={chatMessageInput}
+                                  onChange={(e) =>
+                                    setChatMessageInput(e.target.value)
+                                  }
+                                  placeholder="Type a message to collaborate..."
+                                  className="flex-1 bg-white border border-slate-350 rounded px-2.5 py-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 font-sans"
+                                />
+                                <button
+                                  type="submit"
+                                  className="bg-indigo-600 text-white font-bold px-3 py-1 rounded text-xs hover:bg-indigo-700 transition-all cursor-pointer shadow-sm"
+                                >
+                                  Send
+                                </button>
+                              </form>
+                            </div>
+                          )}
+
+                          {/* Expanded Timeline Events list */}
+                          {expandedTimelineIssueId === issue.id && (
+                            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-3.5 text-left animate-fadeIn font-sans">
+                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
+                                <Clock className="h-3.5 w-3.5 text-slate-600" />{" "}
+                                Issue Progress History Timeline
+                              </h4>
+
+                              <div className="relative pl-4 border-l-2 border-slate-300 space-y-3">
+                                {timelineQuery.isLoading ? (
+                                  <p className="text-[10px] text-slate-400 italic">
+                                    Syncing timeline logs...
+                                  </p>
+                                ) : activeTimelineEvents.length === 0 ? (
+                                  <p className="text-[10px] text-slate-400 italic font-mono">
+                                    No timeline milestones recorded.
+                                  </p>
+                                ) : (
+                                  activeTimelineEvents.map((evt: any) => (
+                                    <div
+                                      key={evt.id}
+                                      className="relative text-xs"
+                                    >
+                                      {/* Event dot */}
+                                      <div
+                                        className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border border-white ${
+                                          evt.isSystem
+                                            ? "bg-slate-450"
+                                            : "bg-emerald-500"
+                                        }`}
+                                      />
+                                      <div className="flex justify-between items-start gap-2">
+                                        <strong className="text-slate-800 text-[11px]">
+                                          {evt.title}
+                                        </strong>
+                                        <span className="text-[8px] text-slate-400 font-mono">
+                                          {new Date(
+                                            evt.createdAt,
+                                          ).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <p className="text-slate-600 text-[10px] leading-relaxed mt-0.5">
+                                        {evt.description}
+                                      </p>
+                                      {evt.creatorName && (
+                                        <span className="text-[8px] font-bold text-slate-450 font-mono uppercase bg-slate-200/50 px-1 rounded inline-block mt-0.5">
+                                          Logged by: {evt.creatorName} (
+                                          {evt.creatorRole})
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+
+                              {/* Manual timeline post form for reporter / contractor / admin */}
+                              {(issue.reporterId === user.id ||
+                                issue.assignedContractorId === user.id ||
+                                user.role === "admin") && (
+                                <form
+                                  onSubmit={(e) =>
+                                    handlePostManualTimelineEvent(e, issue.id)
+                                  }
+                                  className="border-t border-slate-200 pt-3 space-y-2"
+                                >
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                                    Log manual progress milestone
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <input
+                                      type="text"
+                                      required
+                                      value={manualTimelineTitle}
+                                      onChange={(e) =>
+                                        setManualTimelineTitle(e.target.value)
+                                      }
+                                      placeholder="Milestone title (e.g. Site inspected)"
+                                      className="w-full bg-white border border-slate-300 rounded p-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
+                                    />
+                                    <input
+                                      type="text"
+                                      required
+                                      value={manualTimelineDesc}
+                                      onChange={(e) =>
+                                        setManualTimelineDesc(e.target.value)
+                                      }
+                                      placeholder="Milestone description details..."
+                                      className="w-full bg-white border border-slate-300 rounded p-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="submit"
+                                      className="bg-slate-900 text-white font-bold px-3 py-1 rounded text-[10px] hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
+                                    >
+                                      Add Timeline Entry
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Expanded Bids Drawer */}
+                          {selectedIssueForBids === issue.id && (
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-left animate-fadeIn">
+                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                                <DollarSign className="h-3.5 w-3.5 text-emerald-600 animate-pulse shrink-0" />{" "}
+                                Received Service Proposals
+                              </h4>
+                              <div className="space-y-2">
+                                {bidsQuery.isLoading ? (
+                                  <p className="text-[10px] text-slate-400 italic">
+                                    Syncing proposals...
+                                  </p>
+                                ) : activeBids.length === 0 ? (
+                                  <p className="text-[10px] text-slate-400 italic font-mono">
+                                    No contractor proposals submitted for this
+                                    report yet.
+                                  </p>
+                                ) : (
+                                  activeBids.map((bid: any) => (
+                                    <div
+                                      key={bid.id}
+                                      className="bg-white border border-slate-205 rounded p-2.5 space-y-2 shadow-sm font-sans text-xs"
+                                    >
+                                      <div className="flex justify-between items-start text-[11px]">
+                                        <div>
+                                          <p className="font-bold text-slate-800 flex items-center gap-1">
+                                            🛠️ {bid.contractorName}
+                                          </p>
+                                          <p className="text-[9px] text-slate-400 mt-0.5">
+                                            Submitted:{" "}
+                                            {new Date(
+                                              bid.createdAt,
+                                            ).toLocaleDateString()}
+                                          </p>
+                                        </div>
+                                        <div className="text-right">
+                                          <p className="font-bold text-slate-900 font-mono">
+                                            Total Quote: $
+                                            {bid.materialsCost + bid.laborCost}
+                                          </p>
+                                          <p className="text-[9px] text-slate-400 font-mono">
+                                            Mat: ${bid.materialsCost} • Lab: $
+                                            {bid.laborCost} • Hours:{" "}
+                                            {bid.estimatedHours}h
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="bg-slate-50 p-2 rounded border border-slate-100 text-[10px] text-slate-650 leading-relaxed italic">
+                                        "{bid.proposalNotes}"
+                                      </div>
+                                      <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
+                                        <div className="flex flex-col gap-1">
+                                          <span
+                                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider self-start ${
+                                              bid.status === "Accepted"
+                                                ? "bg-emerald-100 text-emerald-800"
+                                                : bid.status === "Rejected"
+                                                  ? "bg-red-100 text-red-800"
+                                                  : bid.status === "Countered"
+                                                    ? "bg-amber-100 text-amber-800"
+                                                    : "bg-amber-100 text-amber-800 animate-pulse"
+                                            }`}
+                                          >
+                                            {bid.status}{" "}
+                                            {bid.counterAmount
+                                              ? `(Countered: $${bid.counterAmount})`
+                                              : ""}
+                                          </span>
+                                        </div>
+
+                                        {bid.status === "Pending" && (
+                                          <div className="flex gap-1.5">
+                                            {showCounterOfferForBid ===
+                                            bid.id ? (
+                                              <div className="bg-amber-50 border border-amber-250 p-2 rounded space-y-1 text-left animate-fadeIn">
+                                                <input
+                                                  type="number"
+                                                  required
+                                                  value={counterAmountInput}
+                                                  onChange={(e) =>
+                                                    setCounterAmountInput(
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                  placeholder="Offer ($)"
+                                                  className="bg-white border border-amber-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-amber-500 font-mono w-20"
+                                                />
+                                                <div className="flex gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleSendCounterOffer(
+                                                        bid.id,
+                                                      )
+                                                    }
+                                                    className="bg-amber-600 text-white font-bold px-2 py-0.5 rounded text-[9px] shadow-sm"
+                                                  >
+                                                    Counter
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setShowCounterOfferForBid(
+                                                        null,
+                                                      )
+                                                    }
+                                                    className="text-slate-400 text-[9px]"
+                                                  >
+                                                    ✕
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setShowCounterOfferForBid(
+                                                      bid.id,
+                                                    );
+                                                    setCounterAmountInput(
+                                                      String(
+                                                        bid.materialsCost +
+                                                          bid.laborCost -
+                                                          15,
+                                                      ),
+                                                    );
+                                                  }}
+                                                  className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 py-0.5 px-2 rounded hover:bg-amber-100"
+                                                >
+                                                  Counter Offer
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    rejectBidMutation.mutate({
+                                                      id: bid.id,
+                                                    })
+                                                  }
+                                                  className="text-[9px] font-bold text-red-650 bg-white border border-red-200 py-0.5 px-2 rounded hover:bg-red-50"
+                                                >
+                                                  Decline
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    acceptBidMutation.mutate({
+                                                      id: bid.id,
+                                                    })
+                                                  }
+                                                  className="text-[9px] font-bold text-white bg-emerald-600 py-0.5 px-2.5 rounded hover:bg-emerald-700 shadow-sm"
+                                                >
+                                                  Accept Proposal
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Counter Offer Status Box for Contractor */}
+                                      {bid.status === "Countered" &&
+                                        bid.contractorId === user.id &&
+                                        bid.counterStatus === "Pending" && (
+                                          <div className="bg-amber-50 border border-amber-200 rounded p-2.5 space-y-2 mt-2 text-xs text-left animate-fadeIn">
+                                            <p className="font-semibold text-amber-800 mb-1.5">
+                                              Resident proposed counter:{" "}
+                                              <span className="font-mono font-bold">
+                                                ${bid.counterAmount}
+                                              </span>
+                                            </p>
+                                            <div className="flex gap-1.5 justify-end">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  rejectCounterMutation.mutate({
+                                                    id: bid.id,
+                                                  })
+                                                }
+                                                className="text-[9px] font-bold text-red-600 bg-white border border-red-200 py-0.5 px-1.5 rounded hover:bg-red-50"
+                                              >
+                                                Decline Counter
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  acceptCounterMutation.mutate({
+                                                    id: bid.id,
+                                                  })
+                                                }
+                                                className="text-[9px] font-bold text-white bg-emerald-600 py-0.5 px-2 rounded hover:bg-emerald-700 shadow-sm"
+                                              >
+                                                Accept Counter
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                      {/* Bid Comments discussion area */}
+                                      <div className="mt-2 border-t border-slate-100 pt-2 space-y-1.5 text-left">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedBidForComments(
+                                              selectedBidForComments === bid.id
+                                                ? null
+                                                : bid.id,
+                                            )
+                                          }
+                                          className="text-[10px] font-bold text-indigo-650 hover:underline flex items-center gap-1"
+                                        >
+                                          <MessageSquare className="h-3 w-3" />
+                                          <span>
+                                            Clarifying discussion (
+                                            {selectedBidForComments === bid.id
+                                              ? "Hide"
+                                              : "Show"}
+                                            )
+                                          </span>
+                                        </button>
+
+                                        {selectedBidForComments === bid.id && (
+                                          <div className="bg-slate-50 border border-slate-200 rounded p-2 space-y-2 text-[10px] animate-fadeIn font-sans">
+                                            <div className="max-h-[110px] overflow-y-auto space-y-1.5 pr-1 font-sans">
+                                              {bidCommentsQuery.isLoading ? (
+                                                <p className="text-[9px] text-slate-400 italic">
+                                                  Syncing comments...
+                                                </p>
+                                              ) : activeBidComments.length ===
+                                                0 ? (
+                                                <p className="text-[9px] text-slate-400 italic">
+                                                  No clarifying comments posted
+                                                  yet. Ask a question!
+                                                </p>
+                                              ) : (
+                                                activeBidComments.map(
+                                                  (comment: any) => (
+                                                    <div
+                                                      key={comment.id}
+                                                      className="bg-white border border-slate-150 rounded p-1.5 shadow-sm"
+                                                    >
+                                                      <div className="flex justify-between items-center text-[8px] opacity-75 font-mono mb-0.5">
+                                                        <strong>
+                                                          {comment.senderName} (
+                                                          {comment.senderRole})
+                                                        </strong>
+                                                        <span>
+                                                          {new Date(
+                                                            comment.createdAt,
+                                                          ).toLocaleTimeString(
+                                                            [],
+                                                            {
+                                                              hour: "2-digit",
+                                                              minute: "2-digit",
+                                                            },
+                                                          )}
+                                                        </span>
+                                                      </div>
+                                                      <p className="text-slate-700 leading-snug">
+                                                        {comment.comment}
+                                                      </p>
+                                                    </div>
+                                                  ),
+                                                )
+                                              )}
+                                            </div>
+                                            <form
+                                              onSubmit={(e) =>
+                                                handleSendBidComment(e, bid.id)
+                                              }
+                                              className="flex gap-1.5 pt-1.5 border-t border-slate-200 font-sans"
+                                            >
+                                              <input
+                                                type="text"
+                                                required
+                                                value={bidCommentInput}
+                                                onChange={(e) =>
+                                                  setBidCommentInput(
+                                                    e.target.value,
+                                                  )
+                                                }
+                                                placeholder="Clarify price breakdown or timeline..."
+                                                className="flex-1 bg-white border border-slate-300 rounded px-2 py-0.5 text-[9px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
+                                              />
+                                              <button
+                                                type="submit"
+                                                className="bg-indigo-650 text-white font-bold px-2 py-0.5 rounded text-[9px] hover:bg-indigo-700 shadow-sm"
+                                              >
+                                                Post
+                                              </button>
+                                            </form>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Infinite Scroll Load More Button */}
+              {issuesQuery.hasNextPage && (
+                <div className="mt-6 text-center">
+                  <button
+                    onClick={() => issuesQuery.fetchNextPage()}
+                    disabled={issuesQuery.isFetchingNextPage}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg shadow disabled:opacity-50 transition-colors"
+                  >
+                    {issuesQuery.isFetchingNextPage
+                      ? "Loading more..."
+                      : "Load More Reports"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: REPORT NEW ISSUE (Resident only) - Extracted Page */}
+          {activeTab === "report" && <ReportPage />}
+
+          {/* TAB 3: MONTHLY RESIDENT WELL-BEING SURVEY (Resident only) - Extracted Page */}
+          {activeTab === "survey" && <SurveyPage />}
+          {/* TAB 4: CONTRACTOR WORKROOM (Contractor only) */}
+          {activeTab === "contractor" && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900">
+                  Contractor Workroom
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Welcome back, <strong>{user.name}</strong>. View neighborhood
+                  reports that match your trade specialty (
+                  <span className="text-emerald-700 font-semibold">
+                    {user.specialty}
+                  </span>
+                  ) to accept jobs, estimate quotes, and claim resolution.
+                </p>
+              </div>
+
+              {/* Grid split: Assigned/Active jobs vs Open Trade Jobs */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Panel left: Assigned Jobs */}
+                <div className="bg-white border border-slate-300 rounded p-4 space-y-3.5 shadow-sm">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                    <Sliders className="h-4 w-4 text-slate-500" /> My Current
+                    Assignments (
+                    {
+                      issues.filter(
+                        (i) =>
+                          i.assignedContractorId === user.id &&
+                          i.status !== "Resolved",
+                      ).length
+                    }
+                    )
+                  </h3>
+
+                  {issues.filter(
+                    (i) =>
+                      i.assignedContractorId === user.id &&
+                      i.status !== "Resolved",
+                  ).length === 0 ? (
+                    <p className="text-xs text-slate-400 py-6 text-center border border-dashed border-slate-200 rounded font-mono">
+                      You have no active assignments. Accept open jobs listed
+                      below!
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {issues
+                        .filter(
+                          (i) =>
+                            i.assignedContractorId === user.id &&
+                            i.status !== "Resolved",
+                        )
+                        .map((job) => (
+                          <div
+                            key={job.id}
+                            className="bg-slate-50 border border-slate-200 rounded p-3 space-y-2.5 text-xs"
+                          >
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-bold text-[10px]">
+                                {job.status}
+                              </span>
+                              <span className="text-slate-900 font-bold font-mono">
+                                Est: ${job.priceQuote}
+                              </span>
+                            </div>
+
+                            <h4 className="font-bold text-slate-800 text-xs leading-tight">
+                              {job.title}
+                            </h4>
+                            <p className="text-slate-500 text-[11px] leading-relaxed line-clamp-2">
+                              {job.description}
+                            </p>
+                            <div className="text-[10px] bg-white border border-slate-200 p-2 rounded text-slate-600">
+                              <strong className="text-slate-800 block mb-0.5 uppercase tracking-wider text-[9px]">
+                                Resident location:
+                              </strong>
+                              House {job.reporterHouse} • {job.reporterName}
+                            </div>
+
+                            <div className="flex gap-2 pt-2 border-t border-slate-200">
+                              {job.status === "Assigned" && (
+                                <button
+                                  onClick={() => handleStartProgress(job.id)}
+                                  disabled={isOffline}
+                                  className="flex-1 bg-slate-900 text-white font-bold py-1.5 rounded text-xs hover:bg-slate-800 transition-all cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Start Work Progress
+                                </button>
+                              )}
+
+                              {job.status === "In Progress" && (
+                                <div className="w-full space-y-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Resolution notes (materials used, steps taken)..."
+                                    value={resolutionNotesInput}
+                                    onChange={(e) =>
+                                      setResolutionNotesInput(e.target.value)
+                                    }
+                                    className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 font-sans"
+                                  />
+
+                                  {/* Contractor Upload Panel */}
+                                  <div className="bg-slate-50 border border-slate-200 rounded p-2 space-y-1.5 text-[11px] text-left">
+                                    <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                      Attach Proof of Repair (Images/Videos)
+                                    </label>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <input
+                                        type="file"
+                                        accept="image/*,video/*"
+                                        multiple
+                                        onChange={(e) =>
+                                          handleMultipleFilesChange(e, "after")
+                                        }
+                                        className="hidden"
+                                        id={`contractor-upload-${job.id}`}
+                                      />
+                                      <label
+                                        htmlFor={`contractor-upload-${job.id}`}
+                                        className="px-2 py-1 bg-slate-900 text-emerald-400 hover:text-emerald-300 font-semibold border border-slate-700 rounded text-[10px] transition-all cursor-pointer inline-block"
+                                      >
+                                        Attach Files
+                                      </label>
+                                      <span className="text-[10px] text-slate-500 font-mono truncate max-w-[150px]">
+                                        {uploadedAfterImages.length +
+                                          uploadedAfterVideos.length}{" "}
+                                        file(s) attached
+                                      </span>
+                                    </div>
+
+                                    {uploadProgress !== null &&
+                                      uploadingFileName && (
+                                        <div className="space-y-0.5 mt-1 text-[9px] text-slate-500">
+                                          <div className="flex justify-between font-mono">
+                                            <span className="truncate max-w-[120px]">
+                                              Uploading {uploadingFileName}...
+                                            </span>
+                                            <span>{uploadProgress}%</span>
+                                          </div>
+                                          <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
+                                            <div
+                                              className="bg-emerald-500 h-full transition-all duration-150"
+                                              style={{
+                                                width: `${uploadProgress}%`,
+                                              }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                    {uploadError && (
+                                      <p className="text-[10px] text-red-600 font-semibold mt-1 flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3 shrink-0" />
+                                        {uploadError}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={() => handleResolveIssue(job.id)}
+                                    className="w-full bg-emerald-600 text-white font-bold py-1.5 rounded text-xs hover:bg-emerald-700 transition-all cursor-pointer shadow-sm"
+                                  >
+                                    Submit Resolution & Request Payout
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Panel sub section: Received payouts */}
+                  <div className="border-t border-slate-200 pt-3 space-y-2">
+                    <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1">
+                      <DollarSign className="h-4 w-4 text-emerald-600" />{" "}
+                      Earnings & Payout Status
+                    </h4>
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-1.5 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          Completed jobs paid:
+                        </span>
+                        <span className="text-emerald-700 font-bold font-mono">
+                          $
+                          {issues
+                            .filter(
+                              (i) =>
+                                i.assignedContractorId === user.id &&
+                                i.status === "Resolved" &&
+                                i.isPaid,
+                            )
+                            .reduce(
+                              (acc, job) => acc + (job.priceQuote || 0),
+                              0,
+                            )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          Pending administrative payout release:
+                        </span>
+                        <span className="text-amber-700 font-bold font-mono">
+                          $
+                          {issues
+                            .filter(
+                              (i) =>
+                                i.assignedContractorId === user.id &&
+                                i.status === "Resolved" &&
+                                !i.isPaid,
+                            )
+                            .reduce(
+                              (acc, job) => acc + (job.priceQuote || 0),
+                              0,
+                            )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Panel right: Open Jobs Matching Trade Specialty */}
+                <div className="bg-white border border-slate-300 rounded p-4 space-y-3.5 shadow-sm">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                    <CheckCircle className="h-4 w-4 text-slate-500" /> Open
+                    Service Inquiries (Matching:{" "}
+                    {user.capabilities && user.capabilities.length > 0
+                      ? user.capabilities
+                          .map(
+                            (cid) =>
+                              capabilities.find((c) => c.id === cid)?.name ||
+                              cid,
+                          )
+                          .filter(Boolean)
+                          .join(", ")
+                      : user.specialty}
+                    )
+                  </h3>
+
+                  {issues.filter(
+                    (i) =>
+                      !i.assignedContractorId &&
+                      (user.capabilities && user.capabilities.length > 0
+                        ? user.capabilities.includes(i.capabilityId || "") ||
+                          user.capabilities.includes(i.category)
+                        : (user.specialty === "Plumber" &&
+                            i.category === "Water Leakage") ||
+                          (user.specialty === "Electrician" &&
+                            i.category === "Electricity Out") ||
+                          (user.specialty === "Waste Management" &&
+                            i.category === "Garbage Disposal") ||
+                          (user.specialty === "Gardening" &&
+                            i.category === "Plants Overgrown") ||
+                          (user.specialty === "Roads" &&
+                            i.category === "Road Repair") ||
+                          i.category === "Public Infrastructure"),
+                  ).length === 0 ? (
+                    <p className="text-xs text-slate-400 py-12 text-center border border-dashed border-slate-200 rounded font-mono">
+                      No open service requests are matching your capabilities at
+                      the moment.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {issues
+                        .filter(
+                          (i) =>
+                            !i.assignedContractorId &&
+                            (user.capabilities && user.capabilities.length > 0
+                              ? user.capabilities.includes(
+                                  i.capabilityId || "",
+                                ) || user.capabilities.includes(i.category)
+                              : (user.specialty === "Plumber" &&
+                                  i.category === "Water Leakage") ||
+                                (user.specialty === "Electrician" &&
+                                  i.category === "Electricity Out") ||
+                                (user.specialty === "Waste Management" &&
+                                  i.category === "Garbage Disposal") ||
+                                (user.specialty === "Gardening" &&
+                                  i.category === "Plants Overgrown") ||
+                                (user.specialty === "Roads" &&
+                                  i.category === "Road Repair") ||
+                                i.category === "Public Infrastructure"),
+                        )
+                        .map((openJob) => (
+                          <div
+                            key={openJob.id}
+                            className="bg-slate-50 border border-slate-200 rounded p-3 space-y-2 text-xs"
+                          >
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-bold text-emerald-700 font-mono text-[9px] uppercase">
+                                {openJob.category}
+                              </span>
+                              <span className="text-slate-500 font-mono text-[9px]">
+                                {openJob.upvotes.length} validations
+                              </span>
+                            </div>
+
+                            <h4 className="font-bold text-slate-800 text-xs leading-tight">
+                              {openJob.title}
+                            </h4>
+                            <p className="text-slate-500 text-[11px] leading-relaxed">
+                              {openJob.description}
+                            </p>
+                            <div className="text-[10px] bg-white border border-slate-200 p-2 rounded text-slate-600 space-y-1">
+                              <div>
+                                <strong>Impact details:</strong>{" "}
+                                {openJob.wasteCaused}
+                              </div>
+                              <div>
+                                <strong>Hours unattended:</strong>{" "}
+                                {openJob.daysUnattended * 24} hours unaddressed
+                              </div>
+                            </div>
+
+                            {selectedIssueForAction === openJob.id ? (
+                              <div className="bg-white border border-slate-300 p-3 rounded space-y-2.5 text-xs text-left animate-fadeIn">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[9px] text-slate-500 mb-0.5 font-bold uppercase tracking-wider">
+                                      Materials Cost ($)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      required
+                                      value={bidMaterialsCost}
+                                      onChange={(e) =>
+                                        setBidMaterialsCost(e.target.value)
+                                      }
+                                      className="w-full bg-slate-50 border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] text-slate-500 mb-0.5 font-bold uppercase tracking-wider">
+                                      Labor Cost ($)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      required
+                                      value={bidLaborCost}
+                                      onChange={(e) =>
+                                        setBidLaborCost(e.target.value)
+                                      }
+                                      className="w-full bg-slate-50 border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[9px] text-slate-500 mb-0.5 font-bold uppercase tracking-wider">
+                                      Est. Hours
+                                    </label>
+                                    <input
+                                      type="number"
+                                      required
+                                      value={bidEstimatedHours}
+                                      onChange={(e) =>
+                                        setBidEstimatedHours(e.target.value)
+                                      }
+                                      className="w-full bg-slate-50 border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col justify-end text-[10px] text-slate-400 font-mono text-right pb-1">
+                                    Total Quote: $
+                                    {(Number(bidMaterialsCost) || 0) +
+                                      (Number(bidLaborCost) || 0)}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] text-slate-500 mb-0.5 font-bold uppercase tracking-wider">
+                                    Proposal / Repair Notes
+                                  </label>
+                                  <textarea
+                                    required
+                                    rows={2}
+                                    value={bidProposalNotes}
+                                    onChange={(e) =>
+                                      setBidProposalNotes(e.target.value)
+                                    }
+                                    placeholder="Describe your plan to resolve this issue and why this quote is fair..."
+                                    className="w-full bg-slate-50 border border-slate-300 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 font-sans"
+                                  />
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedIssueForAction(null)
+                                    }
+                                    className="flex-1 bg-white hover:bg-slate-50 border border-slate-300 rounded py-1 text-xs text-slate-500 transition-all cursor-pointer font-sans"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSubmitBid(openJob.id)}
+                                    disabled={isOffline}
+                                    className="flex-1 bg-slate-900 text-white font-bold py-1 rounded text-xs hover:bg-slate-800 transition-all cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed font-sans"
+                                  >
+                                    Submit Proposal
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setSelectedIssueForAction(openJob.id);
+                                  setBidMaterialsCost("45");
+                                  setBidLaborCost("95");
+                                  setBidEstimatedHours("3");
+                                  setBidProposalNotes("");
+                                }}
+                                disabled={isOffline}
+                                className="w-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold py-1.5 rounded text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Submit Bid Proposal
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Contractor Submitted Bids Hub */}
+              <div className="bg-white border border-slate-300 rounded p-4 shadow-sm mt-4 text-left">
+                <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200 mb-3">
+                  <ClipboardList className="h-4 w-4 text-indigo-600" /> My
+                  Submitted Proposals ({myBids.length})
+                </h3>
+                {myBids.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center font-mono py-4">
+                    You have not submitted any bids yet.
+                  </p>
+                ) : (
+                  <div className="space-y-3.5">
+                    {myBids.map((bid) => {
+                      const relatedIssue = issues.find(
+                        (i) => i.id === bid.issueId,
+                      );
+                      const totalQuote = bid.materialsCost + bid.laborCost;
+                      return (
+                        <div
+                          key={bid.id}
+                          className="bg-slate-50 border border-slate-200 rounded p-3 text-xs space-y-2 relative"
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <span className="text-[10px] text-slate-500 font-mono tracking-wider block">
+                                REPORT #
+                                {relatedIssue?.displayId ||
+                                  bid.issueId.substring(0, 8)}
+                              </span>
+                              <h4 className="font-bold text-slate-800 text-xs mt-0.5 leading-tight">
+                                {relatedIssue?.title || "Loading report..."}
+                              </h4>
+                            </div>
+                            <div className="text-right">
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-extrabold text-[9px] uppercase tracking-wider ${
+                                  bid.status === "Accepted"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : bid.status === "Rejected"
+                                      ? "bg-red-100 text-red-800"
+                                      : bid.status === "Countered"
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-slate-100 text-slate-800"
+                                }`}
+                              >
+                                {bid.status}
+                              </span>
+                              <span className="block text-slate-900 font-bold font-mono mt-1 text-[11px]">
+                                Quote: ${totalQuote}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-slate-600 leading-relaxed font-sans text-[11px] bg-white border border-slate-150 p-2 rounded">
+                            {bid.proposalNotes}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500 pt-1">
+                            <span>🛠️ Materials: ${bid.materialsCost}</span>
+                            <span>👷 Labor: ${bid.laborCost}</span>
+                            <span>⏱️ Hours: {bid.estimatedHours}h</span>
+                          </div>
+
+                          {/* If Countered by Resident, show counter response action panel */}
+                          {bid.status === "Countered" &&
+                            bid.counterStatus === "Pending" && (
+                              <div className="bg-amber-50 border border-amber-250 p-2.5 rounded text-xs space-y-2 mt-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-amber-850 font-semibold">
+                                    Resident counter-offered:{" "}
+                                    <strong className="font-mono text-slate-950">
+                                      ${bid.counterAmount}
+                                    </strong>
+                                  </span>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() =>
+                                        acceptCounterMutation.mutate({
+                                          id: bid.id,
+                                        })
+                                      }
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded text-[10px] transition-all cursor-pointer shadow"
+                                    >
+                                      Accept Offer
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        rejectCounterMutation.mutate({
+                                          id: bid.id,
+                                        })
+                                      }
+                                      className="bg-red-650 hover:bg-red-750 text-white font-bold px-2.5 py-1 rounded text-[10px] transition-all cursor-pointer shadow"
+                                    >
+                                      Decline Offer
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-150">
+                            <span className="text-[10px] text-slate-450 font-mono">
+                              Submitted:{" "}
+                              {new Date(bid.createdAt).toLocaleDateString()}
+                            </span>
+                            <button
+                              onClick={() => {
+                                // Jump and open issue
+                                setActiveTab("issues");
+                                setTimeout(() => {
+                                  (window as any).__jumpToIssue?.(bid.issueId);
+                                }, 100);
+                              }}
+                              className="text-indigo-650 hover:underline text-[10px] font-bold cursor-pointer"
+                            >
+                              Jump to Issue Card →
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Contractor Payments Panel */}
+              <div className="bg-white border border-slate-300 rounded p-4 shadow-sm mt-4">
+                <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200 mb-3">
+                  <DollarSign className="h-4 w-4 text-emerald-600" /> My
+                  Payments
+                </h3>
+                {allPayments.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center font-mono py-4">
+                    No payments found.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Issue ID
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Amount
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Status
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Date Created
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Paid Date
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-slate-700">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allPayments.map((p) => (
+                          <tr
+                            key={p.id}
+                            className="border-b border-slate-100 hover:bg-slate-50"
+                          >
+                            <td className="py-2 px-3 font-mono text-[10px] truncate max-w-[100px]">
+                              {p.issueId}
+                            </td>
+                            <td className="py-2 px-3 font-bold">${p.amount}</td>
+                            <td className="py-2 px-3">
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase tracking-wider ${
+                                  p.status === "Paid"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : p.status === "Overdue"
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-amber-100 text-amber-800"
+                                }`}
+                              >
+                                {p.status}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-[10px]">
+                              {new Date(p.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-2 px-3 text-[10px]">
+                              {p.paidAt
+                                ? new Date(p.paidAt).toLocaleDateString()
+                                : "-"}
+                            </td>
+                            <td className="py-2 px-3">
+                              {p.proofUrl && (
+                                <a
+                                  href={p.proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-600 hover:underline"
+                                >
+                                  Proof
+                                </a>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: GOVERNANCE & ANALYTICS DASHBOARD (Admin/Elected Official only) */}
+          {activeTab === "admin-dashboard" && (
+            <div className="space-y-4 animate-fadeIn">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900">
+                  Elected Official Command Center
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Monitor neighborhood status, contractor speed performance
+                  indices, and resident happiness surveys for future voting
+                  times.
+                </p>
+              </div>
+
+              {/* Stat Bento Grids */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-white border border-slate-300 rounded p-3 text-left shadow-sm">
+                  <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase font-bold">
+                    ACTIVE REQUESTS
+                  </span>
+                  <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
+                    {issues.filter((i) => i.status !== "Resolved").length}
+                  </p>
+                  <span className="text-[10px] text-red-600 font-medium block mt-0.5">
+                    Needs attention
+                  </span>
+                </div>
+                <div className="bg-white border border-slate-300 rounded p-3 text-left shadow-sm">
+                  <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase font-bold">
+                    RESOLVED JOBS
+                  </span>
+                  <p className="text-xl font-extrabold text-emerald-700 mt-0.5 font-mono">
+                    {issues.filter((i) => i.status === "Resolved").length}
+                  </p>
+                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5 font-mono">
+                    Fixes completed
+                  </span>
+                </div>
+                <div className="bg-white border border-slate-300 rounded p-3 text-left shadow-sm">
+                  <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase font-bold">
+                    WELLBEING INDEX
+                  </span>
+                  <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
+                    {adminSurveys.length > 0
+                      ? (
+                          adminSurveys.reduce(
+                            (acc, s) => acc + s.overallHappiness,
+                            0,
+                          ) / adminSurveys.length
+                        ).toFixed(1)
+                      : "4.2"}
+                    /5.0
+                  </p>
+                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                    Citizen approval
+                  </span>
+                </div>
+                <div className="bg-white border border-slate-300 rounded p-3 text-left shadow-sm">
+                  <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase font-bold">
+                    REVENUE RESOLUTION
+                  </span>
+                  <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
+                    $
+                    {issues
+                      .filter((i) => i.status === "Resolved")
+                      .reduce((acc, i) => acc + (i.priceQuote || 0), 0)}
+                  </p>
+                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                    Contractor payouts
+                  </span>
+                </div>
+              </div>
+
+              {/* CSV Data Registry & Export */}
+              <div className="bg-white border border-slate-300 rounded p-4 shadow-sm text-left">
+                <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200 mb-3">
+                  <TrendingUp className="h-4 w-4 text-emerald-600" /> Export
+                  Governance Ledger Logs
+                </h3>
+                <p className="text-slate-500 text-xs mb-4 font-sans">
+                  Download standardized audit CSV files for external
+                  recordkeeping, accounting, and societal accountability audits.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleExportPaymentsCSV}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded text-xs transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+                  >
+                    <span>Download Payouts Ledger (.csv)</span>
+                  </button>
+                  <button
+                    onClick={handleExportIssuesCSV}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded text-xs transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+                  >
+                    <span>Download Issues Log (.csv)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stat charts with recharts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Chart 1: Category Distribution */}
+                <div className="bg-white border border-slate-300 p-4 rounded shadow-sm space-y-3">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                    Issues Distribution by Category
+                  </h3>
+                  <div className="h-64">
+                    {issues.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
+                        No category data yet.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={getCategoryChartData()}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={55}
+                            outerRadius={75}
+                            paddingAngle={4}
+                            dataKey="value"
+                          >
+                            {getCategoryChartData().map((entry, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={COLORS[index % COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor:
+                                theme === "dark" ? "#1e293b" : "#ffffff",
+                              border:
+                                theme === "dark"
+                                  ? "1px solid #334155"
+                                  : "1px solid #cbd5e1",
+                              fontSize: "10px",
+                              color: theme === "dark" ? "#f1f5f9" : "#0f172a",
+                            }}
+                            itemStyle={{
+                              color: theme === "dark" ? "#cbd5e1" : "#334155",
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: "10px" }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Chart 2: Status distribution */}
+                <div className="bg-white border border-slate-300 p-4 rounded shadow-sm space-y-3">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                    Issue Lifespans & Status Overview
+                  </h3>
+                  <div className="h-64">
+                    {issues.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
+                        No status data yet.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={getStatusChartData()}>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke={theme === "dark" ? "#334155" : "#f1f5f9"}
+                          />
+                          <XAxis
+                            dataKey="name"
+                            stroke="#64748b"
+                            fontSize={10}
+                          />
+                          <YAxis stroke="#64748b" fontSize={10} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor:
+                                theme === "dark" ? "#1e293b" : "#ffffff",
+                              border:
+                                theme === "dark"
+                                  ? "1px solid #334155"
+                                  : "1px solid #cbd5e1",
+                              fontSize: "10px",
+                              color: theme === "dark" ? "#f1f5f9" : "#0f172a",
+                            }}
+                            itemStyle={{
+                              color: theme === "dark" ? "#cbd5e1" : "#334155",
+                            }}
+                          />
+                          <Bar
+                            dataKey="count"
+                            fill={theme === "dark" ? "#10b981" : "#475569"}
+                            radius={[2, 2, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Chart 3: Resident surveys approval trend */}
+                <div className="bg-white border border-slate-300 p-4 rounded shadow-sm space-y-3 lg:col-span-2">
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                    Resident Well-being and Infrastructure Approval Indices
+                  </h3>
+                  <div className="h-64">
+                    {adminSurveys.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
+                        Waiting for first monthly surveys to show trends.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={getSurveyWellbeingData()}>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke={theme === "dark" ? "#334155" : "#f1f5f9"}
+                          />
+                          <XAxis
+                            dataKey="month"
+                            stroke="#64748b"
+                            fontSize={10}
+                          />
+                          <YAxis
+                            stroke="#64748b"
+                            fontSize={10}
+                            domain={[0, 5]}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor:
+                                theme === "dark" ? "#1e293b" : "#ffffff",
+                              border:
+                                theme === "dark"
+                                  ? "1px solid #334155"
+                                  : "1px solid #cbd5e1",
+                              fontSize: "10px",
+                              color: theme === "dark" ? "#f1f5f9" : "#0f172a",
+                            }}
+                            itemStyle={{
+                              color: theme === "dark" ? "#cbd5e1" : "#334155",
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: "10px" }} />
+                          <Bar
+                            dataKey="Happiness"
+                            fill={theme === "dark" ? "#10b981" : "#0f172a"}
+                            radius={[2, 2, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="Service Delivery"
+                            fill="#2563eb"
+                            radius={[2, 2, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="Road Safety"
+                            fill="#ca8a04"
+                            radius={[2, 2, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="Sanitation"
+                            fill="#16a34a"
+                            radius={[2, 2, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Contractor Invoices & Payments Section */}
+              <div className="bg-white border border-slate-300 p-4 rounded shadow-sm space-y-3">
+                <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 pb-1">
+                  <DollarSign className="h-4 w-4 text-emerald-600" /> Pending
+                  Contractor Payments & Public Budget Releases
+                </h3>
+
+                {issues.filter((i) => i.status === "Resolved" && !i.isPaid)
+                  .length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-bold text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+                      Needs Payout Release
+                    </h4>
+                    <div className="overflow-x-auto border border-slate-200 rounded">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-500 font-bold bg-slate-50 text-[10px] uppercase tracking-wider">
+                            <th className="p-2.5">Issue ID</th>
+                            <th className="p-2.5">Assigned Handyman</th>
+                            <th className="p-2.5">Estimated Quote</th>
+                            <th className="p-2.5 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {issues
+                            .filter((i) => i.status === "Resolved" && !i.isPaid)
+                            .map((issue) => (
+                              <tr
+                                key={issue.id}
+                                className="hover:bg-slate-50/50 transition-all"
+                              >
+                                <td className="p-2.5 font-mono text-[11px] truncate max-w-[100px]">
+                                  {issue.displayId || issue.id.substring(0, 8)}
+                                </td>
+                                <td className="p-2.5 text-slate-700 font-semibold">
+                                  {issue.assignedContractorName}
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-slate-900">
+                                  ${issue.priceQuote}
+                                </td>
+                                <td className="p-2.5 text-right">
+                                  <button
+                                    onClick={() =>
+                                      handleReleasePayment(issue.id)
+                                    }
+                                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-1 px-2.5 rounded text-[11px] transition-all cursor-pointer shadow-sm"
+                                  >
+                                    Release Payout
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <h4 className="font-bold text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+                  All Payments Tracking
+                </h4>
+                {allPayments.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center border border-dashed border-slate-200 rounded font-mono">
+                    No payments tracked.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 font-bold bg-slate-50 text-[10px] uppercase tracking-wider">
+                          <th className="p-2.5">Issue ID</th>
+                          <th className="p-2.5">Amount</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5">Method</th>
+                          <th className="p-2.5 text-right">Update</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {allPayments.map((p) => (
+                          <tr
+                            key={p.id}
+                            className="hover:bg-slate-50/50 transition-all"
+                          >
+                            <td className="p-2.5 font-mono text-[11px] truncate max-w-[100px]">
+                              {p.issueId}
+                            </td>
+                            <td className="p-2.5 font-mono font-bold text-slate-900">
+                              ${p.amount}
+                            </td>
+                            <td className="p-2.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] ${
+                                  p.status === "Paid"
+                                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                                    : p.status === "Overdue"
+                                      ? "bg-red-50 border border-red-200 text-red-700"
+                                      : "bg-amber-50 border border-amber-200 text-amber-700"
+                                }`}
+                              >
+                                {p.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5">{p.method || "N/A"}</td>
+                            <td className="p-2.5 text-right">
+                              {p.status !== "Paid" && (
+                                <button
+                                  onClick={() => setSelectedPaymentId(p.id)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 rounded text-[11px] transition-all cursor-pointer shadow-sm"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                              {p.proofUrl && (
+                                <a
+                                  href={p.proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-600 hover:underline text-[10px] ml-2 block mt-1 font-bold"
+                                >
+                                  Proof
+                                </a>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: ADMIN RESIDENT WELL-BEING INBOX (Admin only) */}
+          {/* ADMIN-SURVEYS extracted to src/pages/AdminSurveys.tsx (routed). */}
+          {false && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900">
+                  Resident Well-being Inbox
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Review feedback surveys left by residents during monthly
+                  public satisfaction initiatives.
+                </p>
+              </div>
+
+              {adminSurveys.length === 0 ? (
+                <div className="bg-white border border-slate-300 rounded p-10 text-center shadow-sm">
+                  <MessageSquare className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Inbox is Empty
+                  </h3>
+                  <p className="text-slate-500 text-xs max-w-xs mx-auto mt-1">
+                    There are no surveys or qualitative reports registered by
+                    citizens in the system yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {adminSurveys.map((survey) => (
+                    <div
+                      key={survey.id}
+                      className="bg-white border border-slate-300 p-4 rounded flex flex-col justify-between shadow-sm space-y-3.5"
+                    >
+                      <div>
+                        {/* Title line */}
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                          <div>
+                            <span className="text-xs font-bold text-slate-900">
+                              {survey.residentName}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block">
+                              Period: {survey.month}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(survey.date).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        {/* Ratings overview */}
+                        <div className="grid grid-cols-2 gap-1.5 text-xs pt-2.5">
+                          <div className="bg-slate-50 p-1.5 rounded flex justify-between items-center border border-slate-200">
+                            <span className="text-slate-500 text-[10px]">
+                              Happiness:
+                            </span>
+                            <span className="font-bold text-slate-950 font-mono">
+                              {survey.overallHappiness}/5
+                            </span>
+                          </div>
+                          <div className="bg-slate-50 p-1.5 rounded flex justify-between items-center border border-slate-200">
+                            <span className="text-slate-500 text-[10px]">
+                              Services Speed:
+                            </span>
+                            <span className="font-bold text-slate-950 font-mono">
+                              {survey.localServicesRating}/5
+                            </span>
+                          </div>
+                          <div className="bg-slate-50 p-1.5 rounded flex justify-between items-center border border-slate-200">
+                            <span className="text-slate-500 text-[10px]">
+                              Road Quality:
+                            </span>
+                            <span className="font-bold text-slate-950 font-mono">
+                              {survey.roadQualityRating}/5
+                            </span>
+                          </div>
+                          <div className="bg-slate-50 p-1.5 rounded flex justify-between items-center border border-slate-200">
+                            <span className="text-slate-500 text-[10px]">
+                              Cleanliness:
+                            </span>
+                            <span className="font-bold text-slate-950 font-mono">
+                              {survey.cleanlinessRating}/5
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Qualitative note */}
+                        {survey.feedbackText && (
+                          <div className="bg-slate-50 p-2.5 rounded border border-slate-200 mt-2.5 text-xs leading-normal">
+                            <strong className="text-slate-500 block mb-0.5 text-[10px] uppercase tracking-wider">
+                              Suggestions & Observations:
+                            </strong>
+                            <p className="text-slate-700">
+                              “{survey.feedbackText}”
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 7: ADMIN ALERT BROADCASTER (Admin only) */}
+          {/* ADMIN-ANNOUNCEMENTS extracted to src/pages/AdminAnnouncements.tsx (routed). */}
+          {false && (
+            <div className="space-y-4 max-w-xl mx-auto">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                  Official Alert Broadcast Console
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Dispatch priority alert notifications to all registered
+                  community residents.
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleBroadcastSubmit}
+                className="bg-white border border-slate-300 p-5 rounded space-y-4 shadow-sm text-left"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Announcement Category
+                    </label>
+                    <select
+                      value={annCategory}
+                      onChange={(e) => setAnnCategory(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded py-1.5 px-2 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    >
+                      <option value="Water Cut">Water Cut / Maintenance</option>
+                      <option value="Electricity Outage">
+                        Electricity Outage / Cuts
+                      </option>
+                      <option value="Garbage Collection">
+                        Garbage Collection Time
+                      </option>
+                      <option value="Water Outlet">
+                        Scheduled Water Outlet
+                      </option>
+                      <option value="Other">
+                        Other Community Announcement
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Announcement Title
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={annTitle}
+                      onChange={(e) => setAnnTitle(e.target.value)}
+                      placeholder="e.g. Schedule Water Maintenance: Lane 4"
+                      className="w-full bg-slate-50 border border-slate-300 rounded py-1.5 px-2.5 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Announcement Message / Description
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={annDesc}
+                    onChange={(e) => setAnnDesc(e.target.value)}
+                    placeholder="Provide full description of the alert, duration of works, and instructions..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded py-1.5 px-2.5 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-0.5">
+                      Scheduled Date
+                    </label>
+                    <input
+                      type="date"
+                      value={annDate}
+                      onChange={(e) => setAnnDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded py-1 px-2 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-0.5">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={annStart}
+                      onChange={(e) => setAnnStart(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded py-1 px-2 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-0.5">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={annEnd}
+                      onChange={(e) => setAnnEnd(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded py-1 px-2 text-slate-800 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Affected Areas (Comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={annAreas}
+                    onChange={(e) => setAnnAreas(e.target.value)}
+                    placeholder="e.g. Lane 1, Lane 2, Park Circus"
+                    className="w-full bg-slate-50 border border-slate-300 rounded py-1.5 px-2.5 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-slate-500 font-sans"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("issues")}
+                    className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs font-bold text-slate-600 transition-all cursor-pointer font-sans"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-1.5 rounded text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm font-sans"
+                  >
+                    <Megaphone className="h-3.5 w-3.5" />
+                    Schedule Broadcast
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 8: MAP HUB VIEW */}
+          {activeTab === "map" && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                  Hyperlocal Map Hub
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Visualizing reported active issues, community validators, and
+                  contractor resolutions in real-time.
+                </p>
+              </div>
+
+              <div className="bg-white border border-slate-300 rounded shadow-sm overflow-hidden p-1.5">
+                <div
+                  ref={mapContainerRef}
+                  className="w-full rounded border border-slate-200"
+                  style={{ height: "480px" }}
+                ></div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CAMPAIGNS & EVENTS HUB */}
+          {activeTab === "campaigns" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                  Campaigns & Events Hub
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Organize local cleanups, tree-planting drives, security
+                  patrols, or neighborhood socials.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                {/* Left side: Campaigns list (2 cols) */}
+                <div className="lg:col-span-2 space-y-4">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2 text-left">
+                    Active & Upcoming Neighborhood Drives
+                  </h3>
+
+                  {campaignsQuery.isLoading ? (
+                    <p className="text-xs text-slate-500 font-mono text-left">
+                      Loading neighborhood campaigns...
+                    </p>
+                  ) : !campaignsQuery.data ||
+                    campaignsQuery.data.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-left">
+                      No active neighborhood campaigns scheduled yet. Be the
+                      first to host one!
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {campaignsQuery.data.map((c) => {
+                        const hasJoined = c.attendees.includes(user.id);
+                        const isCreator = c.creatorId === user.id;
+
+                        let categoryColor =
+                          "bg-slate-100 text-slate-700 border-slate-200";
+                        if (c.category === "Cleaning")
+                          categoryColor =
+                            "bg-sky-50 text-sky-700 border-sky-200";
+                        else if (c.category === "Planting")
+                          categoryColor =
+                            "bg-emerald-50 text-emerald-700 border-emerald-200";
+                        else if (c.category === "Safety")
+                          categoryColor =
+                            "bg-rose-50 text-rose-700 border-rose-200";
+                        else if (c.category === "Social")
+                          categoryColor =
+                            "bg-indigo-50 text-indigo-700 border-indigo-200";
+
+                        const attendeeCount = c.attendees.length;
+                        const hasMaxLimit = !!c.maxAttendees;
+                        const isFull =
+                          hasMaxLimit && attendeeCount >= (c.maxAttendees || 0);
+                        const progressPercent = hasMaxLimit
+                          ? Math.min(
+                              100,
+                              (attendeeCount / (c.maxAttendees || 1)) * 100,
+                            )
+                          : 0;
+
+                        return (
+                          <div
+                            key={c.id}
+                            className="bg-white border border-slate-300 rounded p-4 flex flex-col justify-between shadow-sm text-left"
+                          >
+                            <div className="space-y-2">
+                              {/* Header tags */}
+                              <div className="flex justify-between items-start gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded-sm border text-[9px] font-bold font-mono ${categoryColor}`}
+                                >
+                                  {c.category}
+                                </span>
+                                {isCreator ? (
+                                  <span className="px-1.5 py-0.2 bg-slate-800 text-white rounded text-[8px] font-bold uppercase tracking-wider font-mono">
+                                    Your Event
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-slate-400 font-sans">
+                                    by{" "}
+                                    <span
+                                      onClick={() =>
+                                        handleUserClick(c.creatorId)
+                                      }
+                                      className="underline font-bold text-slate-600 hover:text-emerald-600 cursor-pointer"
+                                    >
+                                      {c.creatorName}
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Title & Desc */}
+                              <div>
+                                <h4 className="font-bold text-slate-900 text-xs leading-snug">
+                                  {c.title}
+                                </h4>
+                                <p className="text-slate-600 text-[11px] mt-1 leading-relaxed line-clamp-3">
+                                  {c.description}
+                                </p>
+                              </div>
+
+                              {/* Logistics info */}
+                              <div className="text-[10px] space-y-1 text-slate-500 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span>
+                                    {new Date(c.date).toLocaleString("en-US", {
+                                      weekday: "short",
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span>{c.location}</span>
+                                </div>
+                              </div>
+
+                              {/* Attendee indicators */}
+                              <div className="pt-2">
+                                <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold mb-1">
+                                  <span>RSVPs Joined:</span>
+                                  <span className="font-mono">
+                                    {attendeeCount}
+                                    {hasMaxLimit
+                                      ? ` / ${c.maxAttendees} max`
+                                      : " signed up"}
+                                  </span>
+                                </div>
+                                {hasMaxLimit && (
+                                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-300 ${isFull ? "bg-amber-500" : "bg-emerald-500"}`}
+                                      style={{ width: `${progressPercent}%` }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Join/RSVP button */}
+                            <button
+                              onClick={() =>
+                                toggleJoinCampaignMutation.mutate({
+                                  campaignId: c.id,
+                                })
+                              }
+                              disabled={
+                                toggleJoinCampaignMutation.isPending ||
+                                (!hasJoined && isFull) ||
+                                isOffline
+                              }
+                              className={`w-full mt-4 py-1.5 px-3 rounded text-xs font-bold font-sans transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                hasJoined
+                                  ? "bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200"
+                                  : isFull
+                                    ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
+                                    : "bg-slate-900 text-white hover:bg-slate-800"
+                              }`}
+                            >
+                              {hasJoined
+                                ? "✓ Joined (Leave)"
+                                : isFull
+                                  ? "Event Fully Booked"
+                                  : "Join Campaign RSVP"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right side: Host Campaign Form (1 col) */}
+                <div className="bg-white border border-slate-300 rounded shadow-sm p-5 space-y-4">
+                  <form
+                    onSubmit={handleCampaignSubmit}
+                    className="space-y-4 text-left"
+                  >
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2">
+                      Host Neighborhood Event
+                    </h3>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Campaign Title
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Tree Planting Drive"
+                        value={campaignTitle}
+                        onChange={(e) => setCampaignTitle(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Category / Theme
+                      </label>
+                      <select
+                        value={campaignCategory}
+                        onChange={(e) =>
+                          setCampaignCategory(e.target.value as any)
+                        }
+                        className="w-full bg-white border border-slate-300 rounded py-2.5 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                      >
+                        <option value="Cleaning">
+                          Cleaning & Trash Collection
+                        </option>
+                        <option value="Planting">Planting & Landscaping</option>
+                        <option value="Safety">
+                          Safety & Neighborhood Patrols
+                        </option>
+                        <option value="Social">
+                          Social & Community Meetups
+                        </option>
+                        <option value="Other">Other Event</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Description & Details
+                      </label>
+                      <textarea
+                        rows={3}
+                        required
+                        placeholder="Provide details about meeting points, supplies to bring, or event agendas..."
+                        value={campaignDesc}
+                        onChange={(e) => setCampaignDesc(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500 resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Location / Assembly Point
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Lane 2 Main Entrance"
+                        value={campaignLocation}
+                        onChange={(e) => setCampaignLocation(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          Date & Time
+                        </label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={campaignDate}
+                          onChange={(e) => setCampaignDate(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          Max RSVPs (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 20 (Unlimited if blank)"
+                          value={campaignMaxAttendees}
+                          onChange={(e) =>
+                            setCampaignMaxAttendees(e.target.value)
+                          }
+                          className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={createCampaignMutation.isPending || isOffline}
+                        className="w-full bg-slate-900 text-white font-semibold py-2 px-4 rounded hover:bg-slate-800 active:scale-[0.98] transition-all text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {createCampaignMutation.isPending ? (
+                          <>
+                            <span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            Scheduling Event...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Schedule Campaign
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 9: CIVIC LEADERBOARD */}
+          {activeTab === "leaderboard" && (
+            <div className="space-y-4 max-w-xl mx-auto">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                  Civic Leaderboard
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans font-mono uppercase tracking-wider text-[10px]">
+                  Recognizing Citizen Handymen & Active Neighbors
+                </p>
+              </div>
+
+              {usersQuery.isLoading ? (
+                <p className="text-xs text-slate-500 font-mono">
+                  Querying neighborhood data...
+                </p>
+              ) : (
+                <div className="bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
+                  <div className="bg-slate-900 px-4 py-3 flex justify-between items-center text-white">
+                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono">
+                      Community Champion
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono">
+                      Hero Score
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-200">
+                    {[...(usersQuery.data || [])]
+                      .sort((a, b) => b.points - a.points)
+                      .map((u, index) => {
+                        const isTopThree = index < 3;
+                        let medal = "";
+                        if (index === 0) medal = "🥇";
+                        else if (index === 1) medal = "🥈";
+                        else if (index === 2) medal = "🥉";
+
+                        return (
+                          <div
+                            key={u.id}
+                            className={`px-4 py-3 flex justify-between items-center transition-all ${
+                              u.id === user.id
+                                ? "bg-emerald-50/50"
+                                : "hover:bg-slate-55/40"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 font-mono border border-slate-200 shrink-0">
+                                {isTopThree ? medal : index + 1}
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5 leading-none">
+                                  <span
+                                    onClick={() => handleUserClick(u.id)}
+                                    className="underline text-slate-900 hover:text-emerald-600 cursor-pointer transition-all"
+                                  >
+                                    {u.name}
+                                  </span>
+                                  {u.id === user.id && (
+                                    <span className="px-1 py-0.5 bg-slate-800 text-white rounded text-[7px] font-bold uppercase tracking-widest font-mono">
+                                      You
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5 leading-none">
+                                  @{u.username || `user_${u.id}`}
+                                </p>
+                                <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                                  <span className="px-1 py-0.2 bg-slate-100 text-slate-500 rounded text-[8px] font-mono capitalize border border-slate-200">
+                                    {u.role}
+                                  </span>
+                                  {(u.badges || []).map((badge, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-1.5 py-0.2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded text-[8px] font-bold tracking-wider"
+                                    >
+                                      ✨ {badge}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="font-bold text-slate-900 font-mono text-sm shrink-0">
+                              {u.points || 0} pts
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 10: MY PROFILE SETTINGS */}
+          {activeTab === "profile" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                  Account Profile Settings
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-sans">
+                  Manage your personal details, custom avatar, and view tenancy
+                  logs.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                {/* Left Panel: Profile Picture & Badges Card */}
+                <div className="bg-white border border-slate-300 rounded shadow-sm p-5 text-center flex flex-col items-center">
+                  <div className="relative group w-24 h-24 rounded-full overflow-hidden border-2 border-slate-200 shadow-inner mb-4 cursor-pointer">
+                    {profileAvatar ? (
+                      <img
+                        src={profileAvatar}
+                        alt={profileName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-800 text-emerald-400 flex items-center justify-center text-2xl font-bold font-mono">
+                        {profileName.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+
+                    {/* Hover camera upload overlay */}
+                    <label
+                      className={`absolute inset-0 bg-black/55 text-white text-[9px] font-bold uppercase tracking-wider flex flex-col items-center justify-center opacity-0 transition-opacity ${isOffline ? "cursor-not-allowed pointer-events-none" : "group-hover:opacity-100 cursor-pointer"}`}
+                    >
+                      <PlusCircle className="h-4 w-4 mb-1" />
+                      {isOffline ? "Disabled" : "Upload"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                        disabled={avatarUploading || isOffline}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  {avatarUploading && (
+                    <div className="w-full max-w-[150px] mb-3">
+                      <div className="flex justify-between items-center text-[9px] font-mono text-slate-500 mb-1">
+                        <span>Uploading...</span>
+                        <span>{avatarProgress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-200"
+                          style={{ width: `${avatarProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  <h3 className="font-bold text-slate-900 text-sm leading-none">
+                    {profileName}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-mono mt-1">
+                    @{profileUsername}
+                  </p>
+
+                  <div className="w-full border-t border-slate-200 my-4 pt-4 text-left">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                      Civic Reputation
+                    </h4>
+                    <div className="flex justify-between items-center text-xs mb-1.5">
+                      <span className="text-slate-500">Reputation Score</span>
+                      <span className="font-bold text-slate-900 font-mono">
+                        {user.points || 0} XP
+                      </span>
+                    </div>
+
+                    {/* Progress Bar towards Civic Champion */}
+                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200 mb-4">
+                      <div
+                        className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, ((user.points || 0) / 250) * 100)}%`,
+                        }}
+                      ></div>
+                    </div>
+
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                      Earned Badges
+                    </h4>
+                    {!user.badges || user.badges.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 italic">
+                        No badges earned yet. Resolve issues or participate in
+                        surveys to earn badges!
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {user.badges.map((badge, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-sm text-[9px] font-bold font-mono"
+                          >
+                            ✨ {badge}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Panel: Settings Form */}
+                <div className="lg:col-span-2 bg-white border border-slate-300 rounded shadow-sm p-5 space-y-4">
+                  <form
+                    onSubmit={handleProfileSave}
+                    className="space-y-4 text-left"
+                  >
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2">
+                      Profile Information
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          Display Name
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={profileName}
+                          onChange={(e) => setProfileName(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex justify-between">
+                          <span>Civic Username Handle</span>
+                          <button
+                            type="button"
+                            onClick={handleAutoGenerateUsername}
+                            className="text-emerald-600 hover:text-emerald-700 font-bold lowercase text-[9px] tracking-normal flex items-center gap-0.5"
+                          >
+                            <Sparkles className="h-2.5 w-2.5" /> auto-suggest
+                          </button>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2 text-slate-400 text-xs font-mono">
+                            @
+                          </span>
+                          <input
+                            type="text"
+                            required
+                            value={profileUsername}
+                            onChange={(e) => setProfileUsername(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded py-2 pl-7 pr-3 text-slate-900 text-xs font-mono focus:outline-none focus:border-slate-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          Contact Phone Number
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={profilePhone}
+                          onChange={(e) => setProfilePhone(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          Community Role
+                        </label>
+                        <select
+                          value={profileRole}
+                          onChange={(e) =>
+                            setProfileRole(e.target.value as any)
+                          }
+                          className="w-full bg-white border border-slate-300 rounded py-2.5 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                        >
+                          <option value="resident">
+                            Resident (Submit reports & participate in surveys)
+                          </option>
+                          <option value="contractor">
+                            Contractor (Claim repairs & complete contracts)
+                          </option>
+                        </select>
+                      </div>
+
+                      {profileRole === "resident" && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                            House / Apartment Number
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={profileHouse}
+                            onChange={(e) => setProfileHouse(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                          />
+                        </div>
+                      )}
+
+                      {profileRole === "contractor" && (
+                        <>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                              Primary Service Specialty / Trade
+                            </label>
+                            <select
+                              value={profileSpecialty}
+                              onChange={(e) =>
+                                setProfileSpecialty(e.target.value)
+                              }
+                              className="w-full bg-white border border-slate-300 rounded py-2.5 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                            >
+                              <option value="Plumber">
+                                Plumber (Water leaks, piping)
+                              </option>
+                              <option value="Electrician">
+                                Electrician (Streetlights, power issues)
+                              </option>
+                              <option value="Waste Management">
+                                Waste & Garbage Contractor
+                              </option>
+                              <option value="Gardening">
+                                Community Landscaper / Gardener
+                              </option>
+                              <option value="Roads">
+                                Civil / Roadwork Repairs
+                              </option>
+                            </select>
+                          </div>
+
+                          <div className="col-span-full space-y-4 pt-3 border-t border-slate-100 text-left">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              Assigned Capabilities & Trades
+                            </h4>
+                            <p className="text-[10px] text-slate-500 leading-normal font-sans">
+                              Select the specific issue categories you are
+                              qualified and capable to resolve. Matches will
+                              load dynamically in your contractor workroom.
+                            </p>
+
+                            {capabilityGroups.map((group) => (
+                              <div key={group.id} className="space-y-2">
+                                <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-600 border-b border-slate-100 pb-1">
+                                  {group.name}
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {(group.capabilities || []).map(
+                                    (cap: any) => {
+                                      const isChecked =
+                                        profileCapabilities.includes(cap.id);
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={cap.id}
+                                          onClick={() => {
+                                            if (isChecked) {
+                                              setProfileCapabilities((prev) =>
+                                                prev.filter(
+                                                  (c) => c !== cap.id,
+                                                ),
+                                              );
+                                            } else {
+                                              setProfileCapabilities((prev) => [
+                                                ...prev,
+                                                cap.id,
+                                              ]);
+                                            }
+                                          }}
+                                          className={`flex items-start justify-between p-3 rounded border text-xs text-left transition-all ${
+                                            isChecked
+                                              ? "bg-slate-50 border-slate-800 text-slate-900 shadow-sm"
+                                              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50/50"
+                                          }`}
+                                        >
+                                          <div className="space-y-0.5 pr-2">
+                                            <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                                              {cap.imageUrls &&
+                                                cap.imageUrls.length > 0 && (
+                                                  <span className="text-xs">
+                                                    🛠️
+                                                  </span>
+                                                )}
+                                              {cap.name}
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 font-normal leading-relaxed">
+                                              {cap.description}
+                                            </div>
+                                          </div>
+                                          <div
+                                            className={`h-4 w-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                                              isChecked
+                                                ? "bg-slate-900 border-slate-950 text-white"
+                                                : "border-slate-300"
+                                            }`}
+                                          >
+                                            {isChecked && (
+                                              <span className="text-[8px]">
+                                                ✓
+                                              </span>
+                                            )}
+                                          </div>
+                                        </button>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {profileRole === "resident" && (
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Residency Details
+                        </h4>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                              Occupancy Status (Optional)
+                            </label>
+                            <select
+                              value={profileResidenceType}
+                              onChange={(e) =>
+                                setProfileResidenceType(e.target.value as any)
+                              }
+                              disabled={getDaysRemainingForResidency() > 0}
+                              className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500 disabled:bg-slate-50 disabled:text-slate-500 disabled:border-slate-200"
+                            >
+                              <option value="">Select Status...</option>
+                              <option value="owner">Homeowner</option>
+                              <option value="renter">Tenant / Renter</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                              Resident/Tenant Since (Optional)
+                            </label>
+                            <input
+                              type="date"
+                              value={profileResidenceStart}
+                              onChange={(e) =>
+                                setProfileResidenceStart(e.target.value)
+                              }
+                              className="w-full bg-white border border-slate-300 rounded py-2 px-3 text-slate-900 text-xs focus:outline-none focus:border-slate-500"
+                            />
+                          </div>
+                        </div>
+
+                        {getDaysRemainingForResidency() > 0 && (
+                          <div className="flex gap-2 items-start bg-amber-50 border border-amber-200 text-amber-900 rounded p-2.5 text-[10px] leading-relaxed">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+                            <div>
+                              <p className="font-bold">
+                                Residency changes locked for 7 days
+                              </p>
+                              <p className="text-slate-600">
+                                You updated your occupancy status recently.
+                                Under community security bylaws, this setting
+                                can only be changed once per week. You can edit
+                                it again in{" "}
+                                <span className="font-bold font-mono">
+                                  {getDaysRemainingForResidency()} day(s)
+                                </span>
+                                .
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="pt-4 border-t border-slate-200 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={updateProfileMutation.isPending || isOffline}
+                        className="bg-slate-900 text-white font-semibold py-2 px-4 rounded hover:bg-slate-800 active:scale-[0.98] transition-all text-xs shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {updateProfileMutation.isPending ? (
+                          <>
+                            <span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            Saving Profile...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Save Settings
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Visual Tenancy Timeline */}
+                  {user.role === "resident" && (
+                    <div className="pt-4 border-t border-slate-200 text-left">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                        Tenancy Audit History Log
+                      </h4>
+                      {!user.tenancyHistory ||
+                      user.tenancyHistory.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 italic">
+                          No historical status modifications logged.
+                        </p>
+                      ) : (
+                        <div className="relative pl-6 border-l-2 border-slate-200 space-y-4 my-2">
+                          {[...user.tenancyHistory]
+                            .sort(
+                              (a, b) =>
+                                new Date(b.changedAt).getTime() -
+                                new Date(a.changedAt).getTime(),
+                            )
+                            .map((item, idx) => {
+                              const isRenter = item.residenceType === "renter";
+                              return (
+                                <div key={idx} className="relative">
+                                  {/* Marker node */}
+                                  <div
+                                    className={`absolute left-[-31px] top-1 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${isRenter ? "bg-orange-500" : "bg-emerald-500"}`}
+                                  />
+                                  <div className="text-[11px]">
+                                    <p className="font-bold text-slate-900">
+                                      Status converted to{" "}
+                                      {isRenter
+                                        ? "Tenant / Renter"
+                                        : "Homeowner (Resident)"}
+                                    </p>
+                                    <p className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                      Logged on{" "}
+                                      {new Date(
+                                        item.changedAt,
+                                      ).toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Active Device Sessions Manager */}
+                  <div className="pt-6 border-t border-slate-200 text-left mt-6">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+                      <div>
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Active Device Sessions
+                        </h4>
+                        {user.lastLoggedIn && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Last logged in:{" "}
+                            <span className="font-mono text-slate-600">
+                              {new Date(user.lastLoggedIn).toLocaleString()}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                      {sessionsQuery.data && sessionsQuery.data.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => logoutOtherDevicesMutation.mutate()}
+                          disabled={
+                            logoutOtherDevicesMutation.isPending || isOffline
+                          }
+                          className="text-red-600 hover:text-red-700 font-bold text-[9px] tracking-normal uppercase border border-red-200 hover:border-red-300 bg-red-50 hover:bg-red-100/50 py-1.5 px-3 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                        >
+                          {logoutOtherDevicesMutation.isPending
+                            ? "Logging out..."
+                            : "Logout Other Devices"}
+                        </button>
+                      )}
+                    </div>
+
+                    {sessionsQuery.isLoading ? (
+                      <div className="flex justify-center py-6">
+                        <span className="h-5 w-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></span>
+                      </div>
+                    ) : !sessionsQuery.data ||
+                      sessionsQuery.data.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 italic">
+                        No active sessions logged.
+                      </p>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {sessionsQuery.data.map((sess: any) => {
+                          const isCurrent = verifyClientSessionId(
+                            sess.sessionId,
+                          );
+                          return (
+                            <div
+                              key={sess.sessionId}
+                              className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-lg p-3"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`h-2.5 w-2.5 rounded-full ${isCurrent ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}
+                                />
+                                <div>
+                                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                    {sess.deviceName}
+                                    {isCurrent && (
+                                      <span className="bg-emerald-100 text-emerald-800 text-[8px] font-bold uppercase tracking-wider py-0.5 px-1.5 rounded">
+                                        Current Device
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                    Last active:{" "}
+                                    {new Date(sess.lastUsedAt).toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
+                              {!isCurrent && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    revokeSessionMutation.mutate({
+                                      sessionId: sess.sessionId,
+                                    })
+                                  }
+                                  disabled={
+                                    revokeSessionMutation.isPending || isOffline
+                                  }
+                                  className="text-slate-500 hover:text-red-600 font-bold text-[10px] uppercase border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 py-1.5 px-3 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                                >
+                                  {revokeSessionMutation.isPending
+                                    ? "Revoking..."
+                                    : "Revoke"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Capabilities & Groups Manager */}
+                  <div className="bg-white border border-slate-300 rounded shadow-sm p-5 text-left space-y-4 mt-6">
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                        Capabilities & Groups Manager
+                      </h4>
+                      <p className="text-[10px] text-slate-500 font-sans mt-1">
+                        Create, edit, and move capabilities and categories
+                        dynamically across groups.
+                      </p>
+                    </div>
+
+                    {/* Add Group & Add Capability Buttons */}
+                    <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const name = prompt(
+                            "Enter new capability group name:",
+                          );
+                          if (name && name.trim()) {
+                            const desc =
+                              prompt(
+                                "Enter capability group description (optional):",
+                              ) || "";
+                            createGroupMutation.mutate({
+                              name,
+                              description: desc,
+                            });
+                          }
+                        }}
+                        disabled={isOffline}
+                        className="flex-1 bg-slate-900 text-white font-bold py-1.5 px-2.5 rounded text-[10px] hover:bg-slate-800 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                      >
+                        + Create Group
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (capabilityGroups.length === 0) {
+                            toast.error(
+                              "Please create a capability group first!",
+                            );
+                            return;
+                          }
+                          const name = prompt("Enter capability name:");
+                          if (!name || !name.trim()) return;
+                          const desc =
+                            prompt("Enter capability description:") || "";
+                          if (!desc || desc.trim().length < 5) {
+                            toast.error(
+                              "Capability description must be at least 5 characters!",
+                            );
+                            return;
+                          }
+                          const grpId = prompt(
+                            `Select Group ID:\n${capabilityGroups.map((g) => `${g.id}: ${g.name}`).join("\n")}`,
+                          );
+                          if (
+                            !grpId ||
+                            !capabilityGroups.some((g) => g.id === grpId)
+                          ) {
+                            toast.error("Invalid group selection!");
+                            return;
+                          }
+                          createCapabilityMutation.mutate({
+                            name,
+                            description: desc,
+                            imageUrls: [],
+                            groupId: grpId,
+                          });
+                        }}
+                        disabled={isOffline}
+                        className="flex-1 bg-emerald-600 text-white font-bold py-1.5 px-2.5 rounded text-[10px] hover:bg-emerald-700 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                      >
+                        + Add Capability
+                      </button>
+                    </div>
+
+                    {/* Groups list */}
+                    <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+                      {capabilityGroups.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 italic text-center py-4">
+                          No capability groups defined yet.
+                        </p>
+                      ) : (
+                        capabilityGroups.map((g) => (
+                          <div
+                            key={g.id}
+                            className="bg-slate-50 border border-slate-200 rounded p-3 space-y-3"
+                          >
+                            <div className="flex justify-between items-start border-b border-slate-200 pb-1.5">
+                              <div>
+                                <h5 className="text-[11px] font-bold text-slate-800">
+                                  {g.name}
+                                </h5>
+                                <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                                  {g.description || "No description set."}
+                                </p>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const name = prompt(
+                                      "Enter updated group name:",
+                                      g.name,
+                                    );
+                                    if (name && name.trim()) {
+                                      const desc =
+                                        prompt(
+                                          "Enter updated description:",
+                                          g.description || "",
+                                        ) || "";
+                                      updateGroupMutation.mutate({
+                                        id: g.id,
+                                        name,
+                                        description: desc,
+                                      });
+                                    }
+                                  }}
+                                  disabled={isOffline}
+                                  className="text-[8px] font-bold text-slate-600 bg-white border border-slate-300 px-1.5 py-0.5 rounded hover:bg-slate-100/50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      confirm(
+                                        `Are you sure you want to delete "${g.name}" and all its capabilities?`,
+                                      )
+                                    ) {
+                                      deleteGroupMutation.mutate({ id: g.id });
+                                    }
+                                  }}
+                                  disabled={isOffline}
+                                  className="text-[8px] font-bold text-red-650 bg-white border border-red-200 px-1.5 py-0.5 rounded hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Nested capabilities list */}
+                            <div className="space-y-2">
+                              {!g.capabilities ||
+                              g.capabilities.length === 0 ? (
+                                <p className="text-[9px] text-slate-400 italic font-mono">
+                                  No capabilities added.
+                                </p>
+                              ) : (
+                                g.capabilities.map((cap: any) => (
+                                  <div
+                                    key={cap.id}
+                                    className="bg-white border border-slate-200 rounded p-2 flex justify-between items-center gap-2"
+                                  >
+                                    <div className="space-y-0.5 min-w-0 flex-1">
+                                      <p className="text-[10px] font-bold text-slate-800 truncate">
+                                        {cap.name}
+                                      </p>
+                                      <p className="text-[9px] text-slate-400 leading-relaxed font-sans line-clamp-2">
+                                        {cap.description}
+                                      </p>
+                                      {cap.imageUrls &&
+                                        cap.imageUrls.length > 0 && (
+                                          <div className="flex gap-1 mt-1">
+                                            {cap.imageUrls.map(
+                                              (url: string, idx: number) => (
+                                                <img
+                                                  key={idx}
+                                                  src={url}
+                                                  alt=""
+                                                  className="h-6 w-8 object-cover rounded border border-slate-200"
+                                                />
+                                              ),
+                                            )}
+                                          </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-1 shrink-0">
+                                      <div className="flex gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const name = prompt(
+                                              "Enter updated capability name:",
+                                              cap.name,
+                                            );
+                                            if (!name || !name.trim()) return;
+                                            const desc = prompt(
+                                              "Enter updated description:",
+                                              cap.description,
+                                            );
+                                            if (!desc || desc.trim().length < 5)
+                                              return;
+                                            const imgsInput = prompt(
+                                              "Enter image URLs separated by comma (optional):",
+                                              (cap.imageUrls || []).join(", "),
+                                            );
+                                            const urls = imgsInput
+                                              ? imgsInput
+                                                  .split(",")
+                                                  .map((u) => u.trim())
+                                                  .filter(Boolean)
+                                              : [];
+                                            updateCapabilityMutation.mutate({
+                                              id: cap.id,
+                                              name,
+                                              description: desc,
+                                              imageUrls: urls,
+                                              groupId: cap.groupId,
+                                            });
+                                          }}
+                                          disabled={isOffline}
+                                          className="text-[8px] font-bold text-slate-650 bg-white border border-slate-300 px-1 py-0.5 rounded hover:bg-slate-100"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (
+                                              confirm(
+                                                `Are you sure you want to delete capability "${cap.name}"?`,
+                                              )
+                                            ) {
+                                              deleteCapabilityMutation.mutate({
+                                                id: cap.id,
+                                              });
+                                            }
+                                          }}
+                                          disabled={isOffline}
+                                          className="text-[8px] font-bold text-red-650 bg-white border border-red-200 px-1 py-0.5 rounded hover:bg-red-50"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const grpId = prompt(
+                                            `Transfer to Group ID:\n${capabilityGroups.map((g) => `${g.id}: ${g.name}`).join("\n")}`,
+                                          );
+                                          if (
+                                            grpId &&
+                                            capabilityGroups.some(
+                                              (g) => g.id === grpId,
+                                            )
+                                          ) {
+                                            transferCapabilityMutation.mutate({
+                                              id: cap.id,
+                                              groupId: grpId,
+                                            });
+                                          }
+                                        }}
+                                        disabled={isOffline}
+                                        className="w-full text-center text-[8px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 py-0.5 rounded hover:bg-emerald-100/50"
+                                      >
+                                        Transfer Group
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* PUBLIC USER PROFILE OVERLAY MODAL */}
+      {selectedUserForProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-999 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-300 rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white px-5 py-3.5 flex justify-between items-center shrink-0">
+              <span className="text-[10px] font-bold uppercase tracking-wider font-mono">
+                Neighbor Profile Card
+              </span>
+              <button
+                onClick={() => setSelectedUserForProfile(null)}
+                className="text-slate-400 hover:text-white transition-all text-sm font-bold font-mono cursor-pointer"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-left">
+              {/* Profile Card Summary */}
+              <div className="flex flex-col sm:flex-row gap-5 items-center pb-5 border-b border-slate-200">
+                <div className="w-18 h-18 rounded-full overflow-hidden border-2 border-slate-200 shadow-inner shrink-0 bg-slate-800 flex items-center justify-center">
+                  {selectedUserForProfile.avatarUrl ? (
+                    <img
+                      src={selectedUserForProfile.avatarUrl}
+                      alt={selectedUserForProfile.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-xl font-bold font-mono text-emerald-400">
+                      {selectedUserForProfile.name.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-center sm:text-left space-y-1">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <h3 className="font-bold text-slate-900 text-base leading-none">
+                      {selectedUserForProfile.name}
+                    </h3>
+                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-mono capitalize border border-slate-200 font-bold leading-none">
+                      {selectedUserForProfile.role}
+                    </span>
+                    {selectedUserForProfile.role === "resident" &&
+                      selectedUserForProfile.residenceType && (
+                        <span className="px-1.5 py-0.5 bg-orange-50 border border-orange-200 text-orange-800 rounded text-[9px] font-bold font-mono leading-none">
+                          {selectedUserForProfile.residenceType === "owner"
+                            ? "Homeowner"
+                            : "Tenant"}
+                        </span>
+                      )}
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono">
+                    @
+                    {selectedUserForProfile.username ||
+                      `user_${selectedUserForProfile.id}`}
+                  </p>
+
+                  {selectedUserForProfile.residenceStartDate && (
+                    <p className="text-[10px] text-slate-400 font-sans">
+                      Resident of neighborhood since{" "}
+                      {new Date(
+                        selectedUserForProfile.residenceStartDate,
+                      ).toLocaleDateString("en-US", {
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </p>
+                  )}
+
+                  {selectedUserForProfile.role === "contractor" &&
+                    selectedUserForProfile.specialty && (
+                      <div>
+                        <p className="text-xs text-slate-600 font-sans font-bold">
+                          Specializes in {selectedUserForProfile.specialty}
+                        </p>
+                        {(() => {
+                          const avgRating =
+                            contractorReviews.length > 0
+                              ? (
+                                  contractorReviews.reduce(
+                                    (acc, r) => acc + r.rating,
+                                    0,
+                                  ) / contractorReviews.length
+                                ).toFixed(1)
+                              : null;
+                          if (!avgRating) return null;
+                          return (
+                            <div className="flex items-center gap-1.5 mt-1 text-xs text-amber-500 font-extrabold font-mono">
+                              <span>★ {avgRating}</span>
+                              <span className="text-slate-400 font-normal font-sans">
+                                ({contractorReviews.length}{" "}
+                                {contractorReviews.length === 1
+                                  ? "review"
+                                  : "reviews"}
+                                )
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                </div>
+
+                <div className="sm:ml-auto bg-slate-50 border border-slate-300 rounded p-3 text-center sm:text-right shrink-0">
+                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                    Civic Score
+                  </p>
+                  <p className="text-2xl font-bold font-mono text-slate-900 mt-1">
+                    {selectedUserForProfile.points || 0}
+                  </p>
+                  <p className="text-[9px] text-emerald-600 font-bold font-mono leading-none mt-1">
+                    Reputation XP
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges list */}
+              {selectedUserForProfile.badges &&
+                selectedUserForProfile.badges.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Earned Civic Badges
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedUserForProfile.badges.map((badge, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-sm text-[9px] font-bold font-mono"
+                        >
+                          ✨ {badge}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Personal reported/assigned issues list */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+                  {selectedUserForProfile.role === "contractor"
+                    ? "Resolved Service Contracts"
+                    : "Neighborhood Reports Feed"}
+                </h4>
+
+                <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-1">
+                  {selectedUserForProfile.role === "contractor" ? (
+                    issues.filter(
+                      (i) =>
+                        i.assignedContractorId === selectedUserForProfile.id &&
+                        i.status === "Resolved",
+                    ).length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">
+                        No resolved service tickets completed yet.
+                      </p>
+                    ) : (
+                      issues
+                        .filter(
+                          (i) =>
+                            i.assignedContractorId ===
+                              selectedUserForProfile.id &&
+                            i.status === "Resolved",
+                        )
+                        .map((iss) => (
+                          <div
+                            key={iss.id}
+                            onClick={() => {
+                              setSelectedUserForProfile(null);
+                              setActiveTab("issues");
+                              setTimeout(() => {
+                                const el = document.getElementById(
+                                  `issue-card-${iss.id}`,
+                                );
+                                if (el) {
+                                  el.scrollIntoView({
+                                    behavior: "smooth",
+                                    block: "center",
+                                  });
+                                  el.classList.add(
+                                    "ring-2",
+                                    "ring-emerald-500",
+                                  );
+                                  setTimeout(
+                                    () =>
+                                      el.classList.remove(
+                                        "ring-2",
+                                        "ring-emerald-500",
+                                      ),
+                                    3000,
+                                  );
+                                }
+                              }, 150);
+                            }}
+                            className="p-3 border border-slate-200 rounded hover:border-slate-400 transition-all cursor-pointer bg-slate-50 flex justify-between items-center group"
+                          >
+                            <div className="text-left">
+                              <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition-colors">
+                                {iss.title}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Resolved on{" "}
+                                {new Date(iss.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-sm text-[8px] font-bold font-mono">
+                              Resolved
+                            </span>
+                          </div>
+                        ))
+                    )
+                  ) : issues.filter(
+                      (i) => i.reporterId === selectedUserForProfile.id,
+                    ).length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">
+                      This resident has not published any local reports yet.
+                    </p>
+                  ) : (
+                    issues
+                      .filter((i) => i.reporterId === selectedUserForProfile.id)
+                      .map((iss) => {
+                        let badgeColor =
+                          "bg-rose-50 text-rose-700 border-rose-200";
+                        if (iss.status === "Resolved")
+                          badgeColor =
+                            "bg-emerald-50 text-emerald-700 border-emerald-200";
+                        else if (iss.status === "Validated")
+                          badgeColor =
+                            "bg-amber-50 text-amber-700 border-amber-200";
+                        else if (
+                          iss.status === "In Progress" ||
+                          iss.status === "Assigned"
+                        )
+                          badgeColor =
+                            "bg-blue-50 text-blue-700 border-blue-200";
+
+                        return (
+                          <div
+                            key={iss.id}
+                            onClick={() => {
+                              setSelectedUserForProfile(null);
+                              setActiveTab("issues");
+                              setTimeout(() => {
+                                const el = document.getElementById(
+                                  `issue-card-${iss.id}`,
+                                );
+                                if (el) {
+                                  el.scrollIntoView({
+                                    behavior: "smooth",
+                                    block: "center",
+                                  });
+                                  el.classList.add(
+                                    "ring-2",
+                                    "ring-emerald-500",
+                                  );
+                                  setTimeout(
+                                    () =>
+                                      el.classList.remove(
+                                        "ring-2",
+                                        "ring-emerald-500",
+                                      ),
+                                    3000,
+                                  );
+                                }
+                              }, 150);
+                            }}
+                            className="p-3 border border-slate-200 rounded hover:border-slate-400 transition-all cursor-pointer bg-slate-55 flex justify-between items-center group bg-slate-50"
+                          >
+                            <div className="text-left">
+                              <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition-colors">
+                                {iss.title}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Reported on{" "}
+                                {new Date(iss.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <span
+                              className={`px-1.5 py-0.5 border rounded-sm text-[8px] font-bold font-mono ${badgeColor}`}
+                            >
+                              {iss.status}
+                            </span>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+
+              {/* Reviews & Feedback List */}
+              {selectedUserForProfile.role === "contractor" && (
+                <div className="space-y-3 pt-3 border-t border-slate-100">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+                    Reviews & Feedback ({contractorReviews.length})
+                  </h4>
+                  {contractorReviewsQuery.isLoading ? (
+                    <p className="text-xs text-slate-400 italic font-sans">
+                      Loading reviews...
+                    </p>
+                  ) : contractorReviews.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic font-sans">
+                      No reviews or ratings received yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5 max-h-[25vh] overflow-y-auto pr-1">
+                      {contractorReviews.map((rev) => (
+                        <div
+                          key={rev.id}
+                          className="bg-slate-50 border border-slate-200 rounded p-2.5 space-y-1.5 text-xs"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-slate-800">
+                              {rev.reporterName}
+                            </span>
+                            <div className="flex gap-0.5 text-amber-500 font-mono text-[11px] font-bold">
+                              {"★".repeat(rev.rating)}
+                              {"☆".repeat(5 - rev.rating)}
+                            </div>
+                          </div>
+                          <p className="text-slate-600 font-sans italic">
+                            "{rev.comment}"
+                          </p>
+                          <p className="text-[9px] text-slate-400 font-mono">
+                            {new Date(rev.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedUserForProfile(null)}
+                className="bg-slate-900 text-white font-semibold py-1.5 px-4 rounded hover:bg-slate-800 transition-all text-xs cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Payment Update Modal */}
+      {selectedPaymentId && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-1000 flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-emerald-600" /> Mark Payment
+                as Paid
+              </h3>
+              <button
+                onClick={() => setSelectedPaymentId(null)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-y-auto">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Payment Method
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded p-2 text-xs text-slate-900 focus:outline-none focus:border-slate-500"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {paymentMethod !== "Cash" && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Proof of Payment URL
+                  </label>
+                  <input
+                    type="url"
+                    value={paymentProofUrl}
+                    onChange={(e) => setPaymentProofUrl(e.target.value)}
+                    placeholder="https://... (Receipt Image/PDF)"
+                    className="w-full bg-slate-50 border border-slate-300 rounded p-2 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Optional, but recommended for digital methods.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Notes / Transaction ID
+                </label>
+                <textarea
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  placeholder="e.g. Txn ID: #12345678"
+                  rows={2}
+                  className="w-full bg-slate-50 border border-slate-300 rounded p-2 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentId(null)}
+                className="bg-white border border-slate-300 text-slate-600 font-semibold py-1.5 px-4 rounded hover:bg-slate-50 transition-all text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updatePaymentMutation.mutate({
+                    id: selectedPaymentId!,
+                    status: "Paid",
+                    method: paymentMethod,
+                    proofUrl: paymentProofUrl,
+                    notes: paymentNotes,
+                  });
+                  setSelectedPaymentId(null);
+                  setPaymentProofUrl("");
+                  setPaymentNotes("");
+                  setPaymentMethod("Cash");
+                }}
+                className="bg-emerald-600 text-white font-semibold py-1.5 px-4 rounded hover:bg-emerald-700 transition-all text-xs cursor-pointer"
+              >
+                Confirm Paid
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Sticky Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 py-2 px-3 z-990 flex justify-around items-center shadow-lg">
+        <button
+          onClick={() => setActiveTab("issues")}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+            activeTab === "issues" ? "text-slate-900" : "text-slate-400"
+          }`}
+        >
+          <ClipboardList className="h-4.5 w-4.5" />
+          <span>Issues</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("campaigns")}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+            activeTab === "campaigns" ? "text-slate-900" : "text-slate-400"
+          }`}
+        >
+          <Megaphone className="h-4.5 w-4.5" />
+          <span>Campaigns</span>
+        </button>
+
+        {user.role === "resident" && (
+          <button
+            onClick={() => setActiveTab("report")}
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+              activeTab === "report" ? "text-emerald-600" : "text-slate-400"
+            }`}
+          >
+            <PlusCircle className="h-4.5 w-4.5" />
+            <span>Report</span>
+          </button>
+        )}
+
+        {user.role === "contractor" && (
+          <button
+            onClick={() => setActiveTab("contractor")}
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+              activeTab === "contractor" ? "text-indigo-600" : "text-slate-400"
+            }`}
+          >
+            <Sliders className="h-4.5 w-4.5" />
+            <span>Workroom</span>
+          </button>
+        )}
+
+        {user.role === "admin" && (
+          <button
+            onClick={() => setActiveTab("admin-dashboard")}
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+              activeTab === "admin-dashboard"
+                ? "text-blue-600"
+                : "text-slate-400"
+            }`}
+          >
+            <TrendingUp className="h-4.5 w-4.5" />
+            <span>Gov</span>
+          </button>
+        )}
+
+        <button
+          onClick={() => setActiveTab("map")}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+            activeTab === "map" ? "text-slate-900" : "text-slate-400"
+          }`}
+        >
+          <MapPin className="h-4.5 w-4.5" />
+          <span>Map</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("profile")}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+            activeTab === "profile" ? "text-slate-900" : "text-slate-400"
+          }`}
+        >
+          <UserCheck className="h-4.5 w-4.5" />
+          <span>Settings</span>
+        </button>
+
+        <button
+          onClick={() => setShowMobileMoreMenu(true)}
+          className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-700 transition-colors"
+        >
+          <MoreHorizontal className="h-4.5 w-4.5" />
+          <span>More</span>
+        </button>
+      </div>
+
+      {/* Mobile More Drawer Sheet */}
+      {showMobileMoreMenu && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-995 flex items-end justify-center p-0 animate-fadeIn"
+          onClick={() => setShowMobileMoreMenu(false)}
+        >
+          <div
+            className="bg-white border border-slate-300 rounded-t-2xl shadow-xl w-full p-5 pb-8 space-y-4 text-left animate-slideUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+              <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                More Navigation Options
+              </h3>
+              <button
+                onClick={() => setShowMobileMoreMenu(false)}
+                className="text-sm font-bold text-slate-400 hover:text-slate-900 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              <button
+                onClick={() => {
+                  setActiveTab("leaderboard");
+                  setShowMobileMoreMenu(false);
+                }}
+                className={`flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                  activeTab === "leaderboard"
+                    ? "bg-slate-100 border-slate-400 text-slate-950"
+                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Award className="h-4 w-4 text-emerald-600" />
+                <span>Civic Leaderboard</span>
+              </button>
+
+              {user.role === "resident" && (
+                <button
+                  onClick={() => {
+                    setActiveTab("survey");
+                    setShowMobileMoreMenu(false);
+                  }}
+                  className={`flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                    activeTab === "survey"
+                      ? "bg-slate-100 border-slate-400 text-slate-950"
+                      : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <span>Monthly Well-being Survey</span>
+                </button>
+              )}
+
+              {user.role === "admin" && (
+                <>
+                  <button
+                    onClick={() => {
+                      setActiveTab("admin-surveys");
+                      setShowMobileMoreMenu(false);
+                    }}
+                    className={`flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                      activeTab === "admin-surveys"
+                        ? "bg-slate-100 border-slate-400 text-slate-950"
+                        : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <MessageSquare className="h-4 w-4 text-purple-600" />
+                    <span>Resident Inbox</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("admin-announcements");
+                      setShowMobileMoreMenu(false);
+                    }}
+                    className={`flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                      activeTab === "admin-announcements"
+                        ? "bg-slate-100 border-slate-400 text-slate-950"
+                        : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Megaphone className="h-4 w-4 text-rose-600" />
+                    <span>Alert Broadcast Console</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer Info bar */}
+      <footer className="bg-slate-900 border-t border-slate-800 py-4 text-center text-[10px] text-slate-400 font-mono uppercase tracking-widest">
+        <p>
+          WardWatch © {new Date().getFullYear()}.
+          Empowering Neighborhood Transparency & Public Infrastructure Resolution.
+        </p>
+      </footer>
+    </div>
+  );
+}

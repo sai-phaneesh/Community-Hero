@@ -1,0 +1,29 @@
+# Implementation Task Checklist
+
+- [x] Extend Domain Models & Types
+  - Add `latitude` and `longitude` fields to the `User` schema in `types.ts`.
+  - Add `Bid`, `Announcement`, and `IssueChatMessage` interfaces in `types.ts`.
+- [x] Migrate Database Schema DDL & Seeds
+  - Add `latitude` and `longitude` to the `users` table DDL.
+  - Create the `bids`, `announcements`, and `issue_messages` tables DDL.
+  - Seed default announcements and populate users with coordinates.
+- [x] Implement Domain Repositories
+  - Create `bid.repository.ts`, `announcement.repository.ts`, `issue-message.repository.ts` interfaces.
+  - Build Cockroach & local JSON repositories under `src/backend/infrastructure/repositories/`.
+- [x] Setup tRPC context & router procedures
+  - Register new repositories in `context.ts`.
+  - Create `bidRouter` (submit, listForIssue, accept, reject procedures).
+  - Create `announcementRouter` (list, create, delete procedures).
+  - Create `issueMessageRouter` (listForIssue, send procedures).
+  - Mount routers inside `appRouter.ts`.
+- [x] Implement Use Cases (Geo-fencing logic)
+  - Implement Haversine proximity calculation during issue report.
+  - Auto-generate priority notifications to residents within 500m of Critical/High reports.
+- [x] Integrate Frontend User Interface
+  - Coordinate map-picker positioning during registration or settings update.
+  - Contractor proposal submission form with line items.
+  - Bids review breakdown drawers for issue owners / admins.
+  - Categorized scheduler for utility announcements and an Alerts display feed.
+  - Scrollable issue chat drawer widget.
+- [x] Compilation & Verification
+  - Run `npm run build` and resolve any typechecks.

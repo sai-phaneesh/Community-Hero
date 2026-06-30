@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background with Slate-900 -->
+  <rect width="512" height="512" rx="128" fill="#0f172a"/>
+  <!-- Shield/Hero Icon with Emerald Gradient -->
+  <defs>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <!-- Icon Graphics -->
+  <g filter="url(#shadow)">
+    <!-- Shield Outline -->
+    <path d="M256,70 L390,120 L390,280 C390,380 256,442 256,442 C256,442 122,380 122,280 L122,120 Z" fill="url(#emeraldGrad)" />
+    <!-- Hero Mark / Community Sparkle Star -->
+    <path d="M256,150 L275,200 L325,200 L285,235 L300,285 L256,255 L212,285 L227,235 L187,200 L237,200 Z" fill="#ffffff" />
+  </g>
+</svg>
