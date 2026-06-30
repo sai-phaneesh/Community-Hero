@@ -272,4 +272,49 @@ export class CockroachJsonIssueRepository implements IssueRepository {
     }
     return issue;
   }
+
+  async delete(id: string): Promise<void> {
+    if (this.pool) {
+      try {
+        await this.pool.query("UPDATE issues SET duplicate_of_issue_id = NULL WHERE duplicate_of_issue_id = $1", [id]);
+        await this.pool.query("DELETE FROM notifications WHERE target_issue_id = $1", [id]);
+        await this.pool.query("DELETE FROM issues WHERE id = $1", [id]);
+        return;
+      } catch (err) {
+        console.error("[IssueRepository Database Error] delete failed:", err);
+        throw new Error("Database error while deleting neighborhood report.");
+      }
+    }
+
+    const local = this.readLocalDB();
+    local.issues = local.issues || [];
+    local.notifications = local.notifications || [];
+    local.issueMessages = local.issueMessages || [];
+    local.issueTimelines = local.issueTimelines || [];
+    local.bids = local.bids || [];
+    local.bidComments = local.bidComments || [];
+    local.payments = local.payments || [];
+    local.reviews = local.reviews || [];
+
+    const deletedBidIds = new Set(
+      local.bids.filter((bid: any) => bid.issueId === id).map((bid: any) => bid.id),
+    );
+
+    local.issues = local.issues
+      .filter((iss: any) => iss.id !== id)
+      .map((iss: any) =>
+        iss.duplicateOfIssueId === id
+          ? { ...iss, duplicateOfIssueId: undefined }
+          : iss,
+      );
+    local.notifications = local.notifications.filter((n: any) => n.targetIssueId !== id);
+    local.issueMessages = local.issueMessages.filter((m: any) => m.issueId !== id);
+    local.issueTimelines = local.issueTimelines.filter((t: any) => t.issueId !== id);
+    local.bids = local.bids.filter((bid: any) => bid.issueId !== id);
+    local.bidComments = local.bidComments.filter((c: any) => !deletedBidIds.has(c.bidId));
+    local.payments = local.payments.filter((p: any) => p.issueId !== id);
+    local.reviews = local.reviews.filter((r: any) => r.issueId !== id);
+
+    this.writeLocalDB(local);
+  }
 }

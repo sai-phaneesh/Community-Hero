@@ -481,6 +481,91 @@ export class IssueUseCase {
     return saved;
   }
 
+  async updateIssue(data: {
+    id: string;
+    actorId: string;
+    actorRole: "resident" | "contractor" | "admin";
+    title?: string;
+    description?: string;
+    category?: string;
+    capabilityId?: string | null;
+    severity?: "Low" | "Medium" | "High" | "Critical";
+    wasteCaused?: string;
+    latitude?: number;
+    longitude?: number;
+  }): Promise<Issue> {
+    const issue = await this.issueRepo.findById(data.id);
+    if (!issue) {
+      throw new Error("Issue not found.");
+    }
+    if (data.actorRole !== "admin" && issue.reporterId !== data.actorId) {
+      throw new Error("Only the reporter or an administrator can edit this issue.");
+    }
+
+    const updatedIssue: Issue = {
+      ...issue,
+      title: data.title ?? issue.title,
+      description: data.description ?? issue.description,
+      category: data.category ?? issue.category,
+      capabilityId:
+        data.capabilityId === null
+          ? undefined
+          : data.capabilityId ?? issue.capabilityId,
+      severity: data.severity ?? issue.severity,
+      wasteCaused: data.wasteCaused ?? issue.wasteCaused,
+      latitude: data.latitude ?? issue.latitude,
+      longitude: data.longitude ?? issue.longitude,
+    };
+
+    const saved = await this.issueRepo.update(updatedIssue);
+
+    await this.timelineRepo.create({
+      id: crypto.randomUUID(),
+      issueId: saved.id,
+      title: "Issue Details Updated",
+      description: `${data.actorRole === "admin" ? "Admin" : "Reporter"} updated issue details.`,
+      createdAt: new Date().toISOString(),
+      creatorId: data.actorId,
+      isSystem: true,
+    });
+
+    await this.notifyFollowers(
+      saved,
+      "Issue Updated",
+      `Details were updated for "${saved.title}".`,
+      data.actorId,
+    );
+
+    return saved;
+  }
+
+  async deleteIssue(data: {
+    id: string;
+    actorId: string;
+    actorRole: "resident" | "contractor" | "admin";
+  }): Promise<{ success: true }> {
+    const issue = await this.issueRepo.findById(data.id);
+    if (!issue) {
+      throw new Error("Issue not found.");
+    }
+    if (data.actorRole !== "admin" && issue.reporterId !== data.actorId) {
+      throw new Error("Only the reporter or an administrator can delete this issue.");
+    }
+    if (
+      data.actorRole !== "admin" &&
+      (issue.status === "Assigned" ||
+        issue.status === "In Progress" ||
+        issue.status === "Resolved")
+    ) {
+      throw new Error(
+        "Only administrators can delete assigned, in-progress, or resolved issues.",
+      );
+    }
+
+    await this.issueRepo.delete(issue.id);
+    return { success: true };
+  }
+
   async toggleFollowIssue(id: string, userId: string): Promise<Issue> {
     const issue = await this.issueRepo.findById(id);
     if (!issue) {

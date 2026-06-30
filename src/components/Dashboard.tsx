@@ -42,6 +42,8 @@ import {
   Menu,
   MoreHorizontal,
   Share2,
+  Pencil,
+  Trash2,
   Sun,
   Moon,
   X,
@@ -196,6 +198,16 @@ export default function Dashboard({
   const [expandedTimelineIssueId, setExpandedTimelineIssueId] = useState<
     string | null
   >(null);
+  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
+  const [editIssueTitle, setEditIssueTitle] = useState("");
+  const [editIssueDescription, setEditIssueDescription] = useState("");
+  const [editIssueCategory, setEditIssueCategory] = useState("");
+  const [editIssueSeverity, setEditIssueSeverity] = useState<
+    "Low" | "Medium" | "High" | "Critical"
+  >("Medium");
+  const [editIssueWaste, setEditIssueWaste] = useState("");
+  const [editIssueLat, setEditIssueLat] = useState("");
+  const [editIssueLng, setEditIssueLng] = useState("");
 
   // Profile settings states
   const [profileName, setProfileName] = useState(user.name);
@@ -276,6 +288,72 @@ export default function Dashboard({
         tenancyHistory: [],
       });
     }
+  };
+
+  const startIssueEdit = (issue: Issue) => {
+    setEditingIssueId(issue.id);
+    setEditIssueTitle(issue.title);
+    setEditIssueDescription(issue.description);
+    setEditIssueCategory(issue.category);
+    setEditIssueSeverity(issue.severity);
+    setEditIssueWaste(issue.wasteCaused);
+    setEditIssueLat(issue.latitude ? String(issue.latitude) : "");
+    setEditIssueLng(issue.longitude ? String(issue.longitude) : "");
+    setActiveIssueChatId(null);
+    setSelectedIssueForBids(null);
+    setExpandedTimelineIssueId(null);
+    setShowReopenDialogForIssue(null);
+  };
+
+  const handleSubmitIssueEdit = async (
+    e: React.FormEvent,
+    issueId: string,
+  ) => {
+    e.preventDefault();
+    if (editIssueTitle.trim().length < 5) {
+      toast.error("Issue title must be at least 5 characters long.");
+      return;
+    }
+    if (editIssueDescription.trim().length < 15) {
+      toast.error("Issue description must be at least 15 characters long.");
+      return;
+    }
+    if (editIssueWaste.trim().length < 3) {
+      toast.error("Wasted resources description is required.");
+      return;
+    }
+
+    const lat = editIssueLat.trim().length > 0 ? Number(editIssueLat) : undefined;
+    const lng = editIssueLng.trim().length > 0 ? Number(editIssueLng) : undefined;
+    if (
+      (editIssueLat.trim().length > 0 && Number.isNaN(lat)) ||
+      (editIssueLng.trim().length > 0 && Number.isNaN(lng))
+    ) {
+      toast.error("Latitude and longitude must be valid numbers.");
+      return;
+    }
+
+    const selectedCap = capabilities.find((c) => c.name === editIssueCategory);
+    await updateIssueMutation.mutateAsync({
+      id: issueId,
+      title: editIssueTitle.trim(),
+      description: editIssueDescription.trim(),
+      category: editIssueCategory,
+      capabilityId: selectedCap?.id ?? null,
+      severity: editIssueSeverity,
+      wasteCaused: editIssueWaste.trim(),
+      latitude: lat,
+      longitude: lng,
+    });
+  };
+
+  const handleDeleteIssue = async (issue: Issue) => {
+    const confirmed = confirm(
+      `Are you sure you want to delete "${issue.title}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    await deleteIssueMutation.mutateAsync({ id: issue.id });
   };
 
   // Online/Offline network state
@@ -421,6 +499,26 @@ export default function Dashboard({
     },
     onError: (err) => {
       toast.error(err.message || "Failed to log out device.");
+    },
+  });
+  const updateIssueMutation = trpc.issue.update.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      setEditingIssueId(null);
+      toast.success("Issue details updated successfully.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update issue.");
+    },
+  });
+  const deleteIssueMutation = trpc.issue.delete.useMutation({
+    onSuccess: () => {
+      issuesQuery.refetch();
+      setEditingIssueId(null);
+      toast.success("Issue deleted successfully.");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete issue.");
     },
   });
   const logoutOtherDevicesMutation = trpc.auth.logoutOtherDevices.useMutation({
@@ -653,6 +751,9 @@ export default function Dashboard({
 
   const allPayments = allPaymentsQuery.data || [];
   const myBids = contractorBidsQuery.data || [];
+  const activeIssueChat = activeIssueChatId
+    ? issues.find((iss) => iss.id === activeIssueChatId) || null
+    : null;
 
   const sendBidCommentMutation = trpc.bidComment.sendComment.useMutation({
     onSuccess: () => {
@@ -1052,11 +1153,16 @@ export default function Dashboard({
   // Issue Chat: Send message
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeIssueChatId || chatMessageInput.trim().length === 0) return;
+    if (
+      !activeIssueChatId ||
+      chatMessageInput.trim().length === 0 ||
+      sendChatMessageMutation.isPending
+    )
+      return;
     try {
       await sendChatMessageMutation.mutateAsync({
         issueId: activeIssueChatId,
-        message: chatMessageInput,
+        message: chatMessageInput.trim(),
       });
       setChatMessageInput("");
       chatMessagesQuery.refetch();
@@ -1950,6 +2056,7 @@ export default function Dashboard({
                     ))}
                   </div>
                 )}
+
               </div>
             )}
           </div>
@@ -2915,6 +3022,42 @@ export default function Dashboard({
                                 <span>Share</span>
                               </button>
 
+                              {(issue.reporterId === user.id ||
+                                user.role === "admin") && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      if (editingIssueId === issue.id) {
+                                        setEditingIssueId(null);
+                                      } else {
+                                        startIssueEdit(issue);
+                                      }
+                                    }}
+                                    disabled={isOffline}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                      editingIssueId === issue.id
+                                        ? "bg-indigo-650 border-indigo-700 text-white shadow-sm"
+                                        : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleDeleteIssue(issue);
+                                    }}
+                                    disabled={
+                                      isOffline || deleteIssueMutation.isPending
+                                    }
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-red-50 border-red-200 text-red-650 hover:bg-red-100"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                </>
+                              )}
+
                               <button
                                 onClick={() => {
                                   setActiveIssueChatId(
@@ -2925,10 +3068,11 @@ export default function Dashboard({
                                   setSelectedIssueForBids(null);
                                   setExpandedTimelineIssueId(null);
                                   setShowReopenDialogForIssue(null);
+                                  setEditingIssueId(null);
                                 }}
                                 className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                   activeIssueChatId === issue.id
-                                    ? "bg-indigo-650 border-indigo-700 text-white shadow-sm"
+                                    ? "bg-indigo-600 border-indigo-700 text-white shadow-sm"
                                     : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                                 }`}
                               >
@@ -2949,6 +3093,7 @@ export default function Dashboard({
                                       setActiveIssueChatId(null);
                                       setExpandedTimelineIssueId(null);
                                       setShowReopenDialogForIssue(null);
+                                      setEditingIssueId(null);
                                     }}
                                     className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                       selectedIssueForBids === issue.id
@@ -2971,6 +3116,7 @@ export default function Dashboard({
                                   setActiveIssueChatId(null);
                                   setSelectedIssueForBids(null);
                                   setShowReopenDialogForIssue(null);
+                                  setEditingIssueId(null);
                                 }}
                                 className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                   expandedTimelineIssueId === issue.id
@@ -2996,6 +3142,7 @@ export default function Dashboard({
                                       setSelectedIssueForBids(null);
                                       setExpandedTimelineIssueId(null);
                                       setReopenReasonInput("");
+                                      setEditingIssueId(null);
                                     }}
                                     className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                       showReopenDialogForIssue === issue.id
@@ -3060,81 +3207,117 @@ export default function Dashboard({
                             </form>
                           )}
 
-                          {/* Expanded Chat Room Drawer */}
-                          {activeIssueChatId === issue.id && (
-                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-left animate-fadeIn">
-                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                                <MessageSquare className="h-3.5 w-3.5 text-indigo-600 shrink-0" />{" "}
-                                Collaboration Chat room
-                              </h4>
-                              <div className="max-h-[180px] overflow-y-auto space-y-2 pr-1 py-1 font-sans">
-                                {chatMessagesQuery.isLoading ? (
-                                  <p className="text-[10px] text-slate-400 italic">
-                                    Syncing message logs...
-                                  </p>
-                                ) : chatMessages.length === 0 ? (
-                                  <p className="text-[10px] text-slate-400 italic">
-                                    No chat coordination messages posted yet.
-                                    Start the conversation!
-                                  </p>
-                                ) : (
-                                  chatMessages.map((msg: any) => {
-                                    const isSelf = msg.senderId === user.id;
-                                    return (
-                                      <div
-                                        key={msg.id}
-                                        className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
-                                      >
-                                        <div
-                                          className={`p-2 rounded max-w-[85%] text-[11px] leading-relaxed shadow-sm ${
-                                            isSelf
-                                              ? "bg-indigo-600 text-white"
-                                              : "bg-white border border-slate-200 text-slate-800"
-                                          }`}
-                                        >
-                                          <div className="flex justify-between items-center gap-2 mb-0.5 text-[8px] opacity-75 font-mono">
-                                            <span className="font-bold">
-                                              {msg.senderName} ({msg.senderRole}
-                                              )
-                                            </span>
-                                            <span>
-                                              {new Date(
-                                                msg.createdAt,
-                                              ).toLocaleTimeString([], {
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                              })}
-                                            </span>
-                                          </div>
-                                          <p>{msg.message}</p>
-                                        </div>
-                                      </div>
-                                    );
-                                  })
-                                )}
+                          {/* Issue Edit Form */}
+                          {editingIssueId === issue.id && (
+                            <form
+                              onSubmit={(e) => handleSubmitIssueEdit(e, issue.id)}
+                              className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-lg space-y-2 text-left animate-fadeIn font-sans"
+                            >
+                              <div className="text-[11px] font-bold text-indigo-800 flex items-center gap-1">
+                                <Pencil className="h-3.5 w-3.5 shrink-0" />
+                                Edit Issue
                               </div>
-                              <form
-                                onSubmit={handleSendChatMessage}
-                                className="flex gap-2 pt-2 border-t border-slate-200"
-                              >
+                              <input
+                                type="text"
+                                value={editIssueTitle}
+                                onChange={(e) => setEditIssueTitle(e.target.value)}
+                                placeholder="Issue title"
+                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
+                              />
+                              <textarea
+                                value={editIssueDescription}
+                                onChange={(e) =>
+                                  setEditIssueDescription(e.target.value)
+                                }
+                                rows={3}
+                                placeholder="Issue description"
+                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
+                              />
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <select
+                                  value={editIssueCategory}
+                                  onChange={(e) =>
+                                    setEditIssueCategory(e.target.value)
+                                  }
+                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-400"
+                                >
+                                  {capabilityGroups.map((group) => (
+                                    <optgroup key={group.id} label={group.name}>
+                                      {(group.capabilities || []).map((cap: any) => (
+                                        <option key={cap.id} value={cap.name}>
+                                          {cap.name}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                  {!capabilities.some(
+                                    (c) => c.name === editIssueCategory,
+                                  ) &&
+                                    editIssueCategory && (
+                                      <option value={editIssueCategory}>
+                                        {editIssueCategory}
+                                      </option>
+                                    )}
+                                </select>
+                                <select
+                                  value={editIssueSeverity}
+                                  onChange={(e) =>
+                                    setEditIssueSeverity(
+                                      e.target.value as
+                                        | "Low"
+                                        | "Medium"
+                                        | "High"
+                                        | "Critical",
+                                    )
+                                  }
+                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-400"
+                                >
+                                  <option value="Low">Low</option>
+                                  <option value="Medium">Medium</option>
+                                  <option value="High">High</option>
+                                  <option value="Critical">Critical</option>
+                                </select>
+                              </div>
+                              <input
+                                type="text"
+                                value={editIssueWaste}
+                                onChange={(e) => setEditIssueWaste(e.target.value)}
+                                placeholder="Wasted resources / impact"
+                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
                                 <input
                                   type="text"
-                                  required
-                                  value={chatMessageInput}
-                                  onChange={(e) =>
-                                    setChatMessageInput(e.target.value)
-                                  }
-                                  placeholder="Type a message to collaborate..."
-                                  className="flex-1 bg-white border border-slate-350 rounded px-2.5 py-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 font-sans"
+                                  value={editIssueLat}
+                                  onChange={(e) => setEditIssueLat(e.target.value)}
+                                  placeholder="Latitude"
+                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
                                 />
+                                <input
+                                  type="text"
+                                  value={editIssueLng}
+                                  onChange={(e) => setEditIssueLng(e.target.value)}
+                                  placeholder="Longitude"
+                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
+                                />
+                              </div>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingIssueId(null)}
+                                  className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-500 font-bold px-2.5 py-1 rounded text-[10px]"
+                                >
+                                  Cancel
+                                </button>
                                 <button
                                   type="submit"
-                                  className="bg-indigo-600 text-white font-bold px-3 py-1 rounded text-xs hover:bg-indigo-700 transition-all cursor-pointer shadow-sm"
+                                  disabled={updateIssueMutation.isPending}
+                                  className="bg-indigo-600 text-white font-bold px-3 py-1 rounded text-[10px] hover:bg-indigo-700 shadow-sm disabled:opacity-50"
                                 >
-                                  Send
+                                  Save Changes
                                 </button>
-                              </form>
-                            </div>
+                              </div>
+                            </form>
                           )}
 
                           {/* Expanded Timeline Events list */}
@@ -6112,6 +6295,95 @@ export default function Dashboard({
           )}
         </main>
       </div>
+
+      {/* Issue Chat Popup Modal */}
+      {activeIssueChatId && activeIssueChat && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-1000 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-300 rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-indigo-600 text-white px-5 py-3.5 flex justify-between items-center shrink-0">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider font-mono">
+                  Collaboration Chat Room
+                </p>
+                <p className="text-[11px] text-indigo-100 mt-0.5">
+                  {activeIssueChat.displayId || activeIssueChat.id.slice(0, 8)} •{" "}
+                  {activeIssueChat.title}
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveIssueChatId(null)}
+                className="text-indigo-100 hover:text-white transition-all text-sm font-bold font-mono cursor-pointer"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2 flex-1 bg-slate-50">
+              {chatMessagesQuery.isLoading ? (
+                <p className="text-[11px] text-slate-500 italic">
+                  Syncing message logs...
+                </p>
+              ) : chatMessages.length === 0 ? (
+                <p className="text-[11px] text-slate-500 italic">
+                  No collaboration messages yet. Start the conversation.
+                </p>
+              ) : (
+                chatMessages.map((msg: any) => {
+                  const isSelf = msg.senderId === user.id;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
+                    >
+                      <div
+                        className={`p-2.5 rounded max-w-[85%] text-xs leading-relaxed shadow-sm ${
+                          isSelf
+                            ? "bg-indigo-600 text-white"
+                            : "bg-white border border-slate-200 text-slate-800"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center gap-2 mb-1 text-[9px] opacity-80 font-mono">
+                          <span className="font-bold">
+                            {msg.senderName} ({msg.senderRole})
+                          </span>
+                          <span>
+                            {new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                        <p>{msg.message}</p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <form
+              onSubmit={handleSendChatMessage}
+              className="p-4 border-t border-slate-200 flex gap-2 bg-white shrink-0"
+            >
+              <input
+                type="text"
+                required
+                value={chatMessageInput}
+                onChange={(e) => setChatMessageInput(e.target.value)}
+                placeholder="Type a message to collaborate..."
+                className="flex-1 bg-white border border-slate-300 rounded px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-sans"
+              />
+              <button
+                type="submit"
+                disabled={sendChatMessageMutation.isPending}
+                className="bg-indigo-600 text-white font-bold px-4 py-2 rounded text-sm hover:bg-indigo-700 transition-all cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sendChatMessageMutation.isPending ? "Sending..." : "Send"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* PUBLIC USER PROFILE OVERLAY MODAL */}
       {selectedUserForProfile && (

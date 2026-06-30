@@ -6,4 +6,5 @@ export interface IssueRepository {
   findAllPaginated(limit: number, cursor?: string): Promise<{ items: Issue[], nextCursor?: string }>;
   create(issue: Issue): Promise<Issue>;
   update(issue: Issue): Promise<Issue>;
+  delete(id: string): Promise<void>;
 }

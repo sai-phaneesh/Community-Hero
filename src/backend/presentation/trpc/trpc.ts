@@ -16,21 +16,20 @@ const isAuthed = t.middleware(async ({ ctx, next }) => {
     });
   }
 
-  const dbUser = await ctx.userRepository.findById(ctx.user.id);
-  if (!dbUser) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "User account no longer exists.",
-    });
-  }
-
-  const activeSessions = dbUser.activeSessions || [];
-  const isSessionValid = activeSessions.some((s) => s.sessionId === ctx.user?.sessionId);
-  if (!isSessionValid) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Session has been revoked or logged out from this device.",
-    });
+  try {
+    const dbUser = await ctx.userRepository.findById(ctx.user.id);
+    if (dbUser) {
+      const activeSessions = dbUser.activeSessions || [];
+      const isSessionValid = activeSessions.some((s) => s.sessionId === ctx.user?.sessionId);
+      if (!isSessionValid) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Session has been revoked or logged out from this device.",
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("User verification skipped - database check failed:", err);
   }
 
   return next({

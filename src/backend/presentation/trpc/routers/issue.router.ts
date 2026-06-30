@@ -42,6 +42,57 @@ export const issueRouter = router({
       });
     }),
 
+  update: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string(),
+          title: z.string().min(5).max(255).optional(),
+          description: z.string().min(15).optional(),
+          category: z.string().min(2).optional(),
+          capabilityId: z.string().nullable().optional(),
+          severity: z.enum(["Low", "Medium", "High", "Critical"]).optional(),
+          wasteCaused: z.string().min(3).optional(),
+          latitude: z.number().optional(),
+          longitude: z.number().optional(),
+        })
+        .refine(
+          (input) =>
+            input.title !== undefined ||
+            input.description !== undefined ||
+            input.category !== undefined ||
+            input.capabilityId !== undefined ||
+            input.severity !== undefined ||
+            input.wasteCaused !== undefined ||
+            input.latitude !== undefined ||
+            input.longitude !== undefined,
+          {
+            message: "At least one editable field is required.",
+          },
+        ),
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await ctx.issueUseCase.updateIssue({
+        ...input,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+      });
+    }),
+
+  delete: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await ctx.issueUseCase.deleteIssue({
+        id: input.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+      });
+    }),
+
   validate: protectedProcedure
     .input(
       z.object({

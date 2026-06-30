@@ -1,6 +1,7 @@
 import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { z } from "zod";
 import { signToken } from "../jwt.helper";
+import { TRPCError } from "@trpc/server";
 
 export const authRouter = router({
   register: publicProcedure
@@ -17,10 +18,17 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userAgent = ctx.req.headers["user-agent"];
-      const { user, sessionId } = await ctx.authUseCase.register(input, userAgent);
-      const token = signToken({ id: user.id, role: user.role, email: user.email, sessionId });
-      return { user, token };
+      try {
+        const userAgent = ctx.req.headers["user-agent"];
+        const { user, sessionId } = await ctx.authUseCase.register(input, userAgent);
+        const token = signToken({ id: user.id, role: user.role, email: user.email, sessionId });
+        return { user, token };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Registration failed',
+        });
+      }
     }),
 
   login: publicProcedure
@@ -31,10 +39,17 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userAgent = ctx.req.headers["user-agent"];
-      const { user, sessionId } = await ctx.authUseCase.login(input.email, input.password, userAgent);
-      const token = signToken({ id: user.id, role: user.role, email: user.email, sessionId });
-      return { user, token };
+      try {
+        const userAgent = ctx.req.headers["user-agent"];
+        const { user, sessionId } = await ctx.authUseCase.login(input.email, input.password, userAgent);
+        const token = signToken({ id: user.id, role: user.role, email: user.email, sessionId });
+        return { user, token };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Invalid email or password',
+        });
+      }
     }),
 
   list: publicProcedure.query(async ({ ctx }) => {
