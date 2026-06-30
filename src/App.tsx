@@ -6,6 +6,12 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import DashboardRoute from "./routes/DashboardRoute";
 import NotFound from "./components/NotFound";
 
+// Import issue detail pages
+import IssueDetailPage from "./routes/app/issues/detail-page";
+import IssueEditPage from "./routes/app/issues/edit-page";
+import IssueProposalsPage from "./routes/app/issues/proposals-page";
+import IssueTimelinePage from "./routes/app/issues/timeline-page";
+
 export default function App() {
   const { user } = useAuth();
 
@@ -20,6 +26,15 @@ export default function App() {
             index
             element={<Navigate to={`/app/${roleDefaultTab(user)}`} replace />}
           />
+          
+          {/* Issue detail pages - nested under main detail page */}
+          <Route path="issues/:id" element={<IssueDetailPage />}>
+            <Route index element={<div className="text-slate-600">Overview loaded</div>} />
+            <Route path="edit" element={<IssueEditPage />} />
+            <Route path="timeline" element={<IssueTimelinePage />} />
+            <Route path="proposals" element={<IssueProposalsPage />} />
+          </Route>
+          
           {/* All tabs — Dashboard monolith handles its own chrome */}
           <Route path=":tab" element={<DashboardRoute />} />
         </Route>

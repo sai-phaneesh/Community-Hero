@@ -86,7 +86,7 @@ const Main = () => {
     // Production: use Cloud Run backend, Development: use local
     const apiUrl = 'https://community-hero-backend-1065077015658.us-central1.run.app';
     const trpcUrl = `${apiUrl}/trpc`;
-    
+
     return trpc.createClient({
       links: [
         httpBatchLink({
@@ -94,6 +94,19 @@ const Main = () => {
           headers() {
             const token = localStorage.getItem("community_hero_token");
             return token ? { Authorization: `Bearer ${token}` } : {};
+          },
+          async fetch(url, options) {
+            const response = await fetch(url, options);
+
+            // Handle token expiry (401 Unauthorized)
+            if (response.status === 401) {
+              localStorage.removeItem("community_hero_token");
+              localStorage.removeItem("community_hero_user");
+              toast.error("Session expired. Please login again.");
+              setTimeout(() => window.location.href = "/login", 1000);
+            }
+
+            return response;
           },
         }),
       ],

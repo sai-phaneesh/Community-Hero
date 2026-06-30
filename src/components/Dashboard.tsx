@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useMultiUpload } from "../frontend/hooks/useMultiUpload";
 import { useIssueFilters } from "../frontend/hooks/useIssueFilters";
 import { useWebPush } from "../frontend/hooks/useWebPush";
+import { useOnlineStatus } from "../frontend/hooks/useOnlineStatus";
 // Extracted pages
 import ReportPage from "../routes/app/report/page";
 import SurveyPage from "../routes/app/survey/page";
@@ -198,16 +199,9 @@ export default function Dashboard({
   const [expandedTimelineIssueId, setExpandedTimelineIssueId] = useState<
     string | null
   >(null);
-  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
-  const [editIssueTitle, setEditIssueTitle] = useState("");
-  const [editIssueDescription, setEditIssueDescription] = useState("");
-  const [editIssueCategory, setEditIssueCategory] = useState("");
-  const [editIssueSeverity, setEditIssueSeverity] = useState<
-    "Low" | "Medium" | "High" | "Critical"
-  >("Medium");
-  const [editIssueWaste, setEditIssueWaste] = useState("");
-  const [editIssueLat, setEditIssueLat] = useState("");
-  const [editIssueLng, setEditIssueLng] = useState("");
+  const [issuePendingDelete, setIssuePendingDelete] = useState<Issue | null>(
+    null,
+  );
 
   // Profile settings states
   const [profileName, setProfileName] = useState(user.name);
@@ -290,95 +284,27 @@ export default function Dashboard({
     }
   };
 
-  const startIssueEdit = (issue: Issue) => {
-    setEditingIssueId(issue.id);
-    setEditIssueTitle(issue.title);
-    setEditIssueDescription(issue.description);
-    setEditIssueCategory(issue.category);
-    setEditIssueSeverity(issue.severity);
-    setEditIssueWaste(issue.wasteCaused);
-    setEditIssueLat(issue.latitude ? String(issue.latitude) : "");
-    setEditIssueLng(issue.longitude ? String(issue.longitude) : "");
-    setActiveIssueChatId(null);
-    setSelectedIssueForBids(null);
-    setExpandedTimelineIssueId(null);
-    setShowReopenDialogForIssue(null);
+  const handleDeleteIssue = (issue: Issue) => {
+    setIssuePendingDelete(issue);
   };
 
-  const handleSubmitIssueEdit = async (
-    e: React.FormEvent,
-    issueId: string,
-  ) => {
-    e.preventDefault();
-    if (editIssueTitle.trim().length < 5) {
-      toast.error("Issue title must be at least 5 characters long.");
-      return;
-    }
-    if (editIssueDescription.trim().length < 15) {
-      toast.error("Issue description must be at least 15 characters long.");
-      return;
-    }
-    if (editIssueWaste.trim().length < 3) {
-      toast.error("Wasted resources description is required.");
-      return;
-    }
-
-    const lat = editIssueLat.trim().length > 0 ? Number(editIssueLat) : undefined;
-    const lng = editIssueLng.trim().length > 0 ? Number(editIssueLng) : undefined;
-    if (
-      (editIssueLat.trim().length > 0 && Number.isNaN(lat)) ||
-      (editIssueLng.trim().length > 0 && Number.isNaN(lng))
-    ) {
-      toast.error("Latitude and longitude must be valid numbers.");
-      return;
-    }
-
-    const selectedCap = capabilities.find((c) => c.name === editIssueCategory);
-    await updateIssueMutation.mutateAsync({
-      id: issueId,
-      title: editIssueTitle.trim(),
-      description: editIssueDescription.trim(),
-      category: editIssueCategory,
-      capabilityId: selectedCap?.id ?? null,
-      severity: editIssueSeverity,
-      wasteCaused: editIssueWaste.trim(),
-      latitude: lat,
-      longitude: lng,
-    });
-  };
-
-  const handleDeleteIssue = async (issue: Issue) => {
-    const confirmed = confirm(
-      `Are you sure you want to delete "${issue.title}"? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-
-    await deleteIssueMutation.mutateAsync({ id: issue.id });
+  const handleConfirmDeleteIssue = async () => {
+    if (!issuePendingDelete) return;
+    await deleteIssueMutation.mutateAsync({ id: issuePendingDelete.id });
   };
 
   // Online/Offline network state
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const isOffline = useOnlineStatus();
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOffline(false);
-      toast.success("Connection restored! All actions re-enabled.");
-    };
-    const handleOffline = () => {
-      setIsOffline(true);
+    if (isOffline) {
       toast.warning("Connection lost. Switched to view-only offline mode.", {
         duration: 8000,
       });
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
+    } else {
+      toast.success("Connection restored! All actions re-enabled.");
+    }
+  }, [isOffline]);
 
   // Global window handler for Leaflet Map Popups
   useEffect(() => {
@@ -501,20 +427,10 @@ export default function Dashboard({
       toast.error(err.message || "Failed to log out device.");
     },
   });
-  const updateIssueMutation = trpc.issue.update.useMutation({
-    onSuccess: () => {
-      issuesQuery.refetch();
-      setEditingIssueId(null);
-      toast.success("Issue details updated successfully.");
-    },
-    onError: (err) => {
-      toast.error(err.message || "Failed to update issue.");
-    },
-  });
   const deleteIssueMutation = trpc.issue.delete.useMutation({
     onSuccess: () => {
       issuesQuery.refetch();
-      setEditingIssueId(null);
+      setIssuePendingDelete(null);
       toast.success("Issue deleted successfully.");
     },
     onError: (err) => {
@@ -1101,30 +1017,6 @@ export default function Dashboard({
       });
     } catch (err: any) {
       toast.error(err.message || "Failed to propose counter offer.");
-    }
-  };
-
-  // Manual milestone timeline events
-  const handlePostManualTimelineEvent = async (
-    e: React.FormEvent,
-    issueId: string,
-  ) => {
-    e.preventDefault();
-    if (
-      manualTimelineTitle.trim().length < 3 ||
-      manualTimelineDesc.trim().length < 5
-    ) {
-      toast.error("Milestone title and description are required.");
-      return;
-    }
-    try {
-      await addTimelineEventMutation.mutateAsync({
-        issueId,
-        title: manualTimelineTitle,
-        description: manualTimelineDesc,
-      });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to log timeline milestone.");
     }
   };
 
@@ -2570,9 +2462,12 @@ export default function Dashboard({
                         <div>
                           {/* Top tags */}
                           <div className="flex justify-between items-start gap-2 mb-2">
-                            <span className="text-[9px] font-mono tracking-wider text-slate-400 uppercase">
+                            <button
+                              onClick={() => navigate(`/app/issues/${issue.id}`)}
+                              className="text-[9px] font-mono tracking-wider text-emerald-600 hover:text-emerald-700 uppercase hover:underline cursor-pointer transition-all"
+                            >
                               ID: {issue.displayId || issue.id.substring(0, 8)}
-                            </span>
+                            </button>
                             <span
                               className={`px-1.5 py-0.5 rounded font-bold border ${statusColors[issue.status]}`}
                             >
@@ -2581,7 +2476,10 @@ export default function Dashboard({
                           </div>
 
                           {/* Title */}
-                          <h3 className="font-bold text-sm text-slate-900 leading-snug">
+                          <h3
+                            onClick={() => navigate(`/app/issues/${issue.id}`)}
+                            className="font-bold text-sm text-emerald-600 leading-snug hover:text-emerald-700 cursor-pointer transition-all"
+                          >
                             {issue.title}
                           </h3>
 
@@ -3026,19 +2924,9 @@ export default function Dashboard({
                                 user.role === "admin") && (
                                 <>
                                   <button
-                                    onClick={() => {
-                                      if (editingIssueId === issue.id) {
-                                        setEditingIssueId(null);
-                                      } else {
-                                        startIssueEdit(issue);
-                                      }
-                                    }}
+                                    onClick={() => navigate(`/app/issues/${issue.id}/edit`)}
                                     disabled={isOffline}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                                      editingIssueId === issue.id
-                                        ? "bg-indigo-650 border-indigo-700 text-white shadow-sm"
-                                        : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                    }`}
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                                   >
                                     <Pencil className="h-3 w-3" />
                                     <span>Edit</span>
@@ -3068,7 +2956,6 @@ export default function Dashboard({
                                   setSelectedIssueForBids(null);
                                   setExpandedTimelineIssueId(null);
                                   setShowReopenDialogForIssue(null);
-                                  setEditingIssueId(null);
                                 }}
                                 className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                   activeIssueChatId === issue.id
@@ -3084,22 +2971,8 @@ export default function Dashboard({
                                 (issue.reporterId === user.id ||
                                   user.role === "admin") && (
                                   <button
-                                    onClick={() => {
-                                      setSelectedIssueForBids(
-                                        selectedIssueForBids === issue.id
-                                          ? null
-                                          : issue.id,
-                                      );
-                                      setActiveIssueChatId(null);
-                                      setExpandedTimelineIssueId(null);
-                                      setShowReopenDialogForIssue(null);
-                                      setEditingIssueId(null);
-                                    }}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                                      selectedIssueForBids === issue.id
-                                        ? "bg-emerald-600 border-emerald-700 text-white shadow-sm"
-                                        : "bg-white border-slate-300 text-slate-650 hover:text-slate-900 hover:bg-slate-100"
-                                    }`}
+                                    onClick={() => navigate(`/app/issues/${issue.id}/proposals`)}
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer bg-white border-slate-300 text-slate-650 hover:text-slate-900 hover:bg-slate-100"
                                   >
                                     <DollarSign className="h-3 w-3" />
                                     <span>Proposals</span>
@@ -3107,22 +2980,8 @@ export default function Dashboard({
                                 )}
 
                               <button
-                                onClick={() => {
-                                  setExpandedTimelineIssueId(
-                                    expandedTimelineIssueId === issue.id
-                                      ? null
-                                      : issue.id,
-                                  );
-                                  setActiveIssueChatId(null);
-                                  setSelectedIssueForBids(null);
-                                  setShowReopenDialogForIssue(null);
-                                  setEditingIssueId(null);
-                                }}
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                                  expandedTimelineIssueId === issue.id
-                                    ? "bg-slate-700 border-slate-800 text-white shadow-sm"
-                                    : "bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                }`}
+                                onClick={() => setExpandedTimelineIssueId(issue.id)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer bg-white border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                               >
                                 <Clock className="h-3 w-3" />
                                 <span>Timeline</span>
@@ -3142,7 +3001,6 @@ export default function Dashboard({
                                       setSelectedIssueForBids(null);
                                       setExpandedTimelineIssueId(null);
                                       setReopenReasonInput("");
-                                      setEditingIssueId(null);
                                     }}
                                     className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                       showReopenDialogForIssue === issue.id
@@ -3207,522 +3065,7 @@ export default function Dashboard({
                             </form>
                           )}
 
-                          {/* Issue Edit Form */}
-                          {editingIssueId === issue.id && (
-                            <form
-                              onSubmit={(e) => handleSubmitIssueEdit(e, issue.id)}
-                              className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-lg space-y-2 text-left animate-fadeIn font-sans"
-                            >
-                              <div className="text-[11px] font-bold text-indigo-800 flex items-center gap-1">
-                                <Pencil className="h-3.5 w-3.5 shrink-0" />
-                                Edit Issue
-                              </div>
-                              <input
-                                type="text"
-                                value={editIssueTitle}
-                                onChange={(e) => setEditIssueTitle(e.target.value)}
-                                placeholder="Issue title"
-                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
-                              />
-                              <textarea
-                                value={editIssueDescription}
-                                onChange={(e) =>
-                                  setEditIssueDescription(e.target.value)
-                                }
-                                rows={3}
-                                placeholder="Issue description"
-                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
-                              />
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <select
-                                  value={editIssueCategory}
-                                  onChange={(e) =>
-                                    setEditIssueCategory(e.target.value)
-                                  }
-                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-400"
-                                >
-                                  {capabilityGroups.map((group) => (
-                                    <optgroup key={group.id} label={group.name}>
-                                      {(group.capabilities || []).map((cap: any) => (
-                                        <option key={cap.id} value={cap.name}>
-                                          {cap.name}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                  {!capabilities.some(
-                                    (c) => c.name === editIssueCategory,
-                                  ) &&
-                                    editIssueCategory && (
-                                      <option value={editIssueCategory}>
-                                        {editIssueCategory}
-                                      </option>
-                                    )}
-                                </select>
-                                <select
-                                  value={editIssueSeverity}
-                                  onChange={(e) =>
-                                    setEditIssueSeverity(
-                                      e.target.value as
-                                        | "Low"
-                                        | "Medium"
-                                        | "High"
-                                        | "Critical",
-                                    )
-                                  }
-                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-400"
-                                >
-                                  <option value="Low">Low</option>
-                                  <option value="Medium">Medium</option>
-                                  <option value="High">High</option>
-                                  <option value="Critical">Critical</option>
-                                </select>
-                              </div>
-                              <input
-                                type="text"
-                                value={editIssueWaste}
-                                onChange={(e) => setEditIssueWaste(e.target.value)}
-                                placeholder="Wasted resources / impact"
-                                className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
-                              />
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  type="text"
-                                  value={editIssueLat}
-                                  onChange={(e) => setEditIssueLat(e.target.value)}
-                                  placeholder="Latitude"
-                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
-                                />
-                                <input
-                                  type="text"
-                                  value={editIssueLng}
-                                  onChange={(e) => setEditIssueLng(e.target.value)}
-                                  placeholder="Longitude"
-                                  className="w-full bg-white border border-indigo-200 rounded p-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-400"
-                                />
-                              </div>
-                              <div className="flex gap-2 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingIssueId(null)}
-                                  className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-500 font-bold px-2.5 py-1 rounded text-[10px]"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="submit"
-                                  disabled={updateIssueMutation.isPending}
-                                  className="bg-indigo-600 text-white font-bold px-3 py-1 rounded text-[10px] hover:bg-indigo-700 shadow-sm disabled:opacity-50"
-                                >
-                                  Save Changes
-                                </button>
-                              </div>
-                            </form>
-                          )}
 
-                          {/* Expanded Timeline Events list */}
-                          {expandedTimelineIssueId === issue.id && (
-                            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-3.5 text-left animate-fadeIn font-sans">
-                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
-                                <Clock className="h-3.5 w-3.5 text-slate-600" />{" "}
-                                Issue Progress History Timeline
-                              </h4>
-
-                              <div className="relative pl-4 border-l-2 border-slate-300 space-y-3">
-                                {timelineQuery.isLoading ? (
-                                  <p className="text-[10px] text-slate-400 italic">
-                                    Syncing timeline logs...
-                                  </p>
-                                ) : activeTimelineEvents.length === 0 ? (
-                                  <p className="text-[10px] text-slate-400 italic font-mono">
-                                    No timeline milestones recorded.
-                                  </p>
-                                ) : (
-                                  activeTimelineEvents.map((evt: any) => (
-                                    <div
-                                      key={evt.id}
-                                      className="relative text-xs"
-                                    >
-                                      {/* Event dot */}
-                                      <div
-                                        className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border border-white ${
-                                          evt.isSystem
-                                            ? "bg-slate-450"
-                                            : "bg-emerald-500"
-                                        }`}
-                                      />
-                                      <div className="flex justify-between items-start gap-2">
-                                        <strong className="text-slate-800 text-[11px]">
-                                          {evt.title}
-                                        </strong>
-                                        <span className="text-[8px] text-slate-400 font-mono">
-                                          {new Date(
-                                            evt.createdAt,
-                                          ).toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <p className="text-slate-600 text-[10px] leading-relaxed mt-0.5">
-                                        {evt.description}
-                                      </p>
-                                      {evt.creatorName && (
-                                        <span className="text-[8px] font-bold text-slate-450 font-mono uppercase bg-slate-200/50 px-1 rounded inline-block mt-0.5">
-                                          Logged by: {evt.creatorName} (
-                                          {evt.creatorRole})
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-
-                              {/* Manual timeline post form for reporter / contractor / admin */}
-                              {(issue.reporterId === user.id ||
-                                issue.assignedContractorId === user.id ||
-                                user.role === "admin") && (
-                                <form
-                                  onSubmit={(e) =>
-                                    handlePostManualTimelineEvent(e, issue.id)
-                                  }
-                                  className="border-t border-slate-200 pt-3 space-y-2"
-                                >
-                                  <div className="text-[10px] font-bold text-slate-500 uppercase">
-                                    Log manual progress milestone
-                                  </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <input
-                                      type="text"
-                                      required
-                                      value={manualTimelineTitle}
-                                      onChange={(e) =>
-                                        setManualTimelineTitle(e.target.value)
-                                      }
-                                      placeholder="Milestone title (e.g. Site inspected)"
-                                      className="w-full bg-white border border-slate-300 rounded p-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
-                                    />
-                                    <input
-                                      type="text"
-                                      required
-                                      value={manualTimelineDesc}
-                                      onChange={(e) =>
-                                        setManualTimelineDesc(e.target.value)
-                                      }
-                                      placeholder="Milestone description details..."
-                                      className="w-full bg-white border border-slate-300 rounded p-1 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
-                                    />
-                                  </div>
-                                  <div className="flex justify-end">
-                                    <button
-                                      type="submit"
-                                      className="bg-slate-900 text-white font-bold px-3 py-1 rounded text-[10px] hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
-                                    >
-                                      Add Timeline Entry
-                                    </button>
-                                  </div>
-                                </form>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Expanded Bids Drawer */}
-                          {selectedIssueForBids === issue.id && (
-                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-left animate-fadeIn">
-                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                                <DollarSign className="h-3.5 w-3.5 text-emerald-600 animate-pulse shrink-0" />{" "}
-                                Received Service Proposals
-                              </h4>
-                              <div className="space-y-2">
-                                {bidsQuery.isLoading ? (
-                                  <p className="text-[10px] text-slate-400 italic">
-                                    Syncing proposals...
-                                  </p>
-                                ) : activeBids.length === 0 ? (
-                                  <p className="text-[10px] text-slate-400 italic font-mono">
-                                    No contractor proposals submitted for this
-                                    report yet.
-                                  </p>
-                                ) : (
-                                  activeBids.map((bid: any) => (
-                                    <div
-                                      key={bid.id}
-                                      className="bg-white border border-slate-205 rounded p-2.5 space-y-2 shadow-sm font-sans text-xs"
-                                    >
-                                      <div className="flex justify-between items-start text-[11px]">
-                                        <div>
-                                          <p className="font-bold text-slate-800 flex items-center gap-1">
-                                            🛠️ {bid.contractorName}
-                                          </p>
-                                          <p className="text-[9px] text-slate-400 mt-0.5">
-                                            Submitted:{" "}
-                                            {new Date(
-                                              bid.createdAt,
-                                            ).toLocaleDateString()}
-                                          </p>
-                                        </div>
-                                        <div className="text-right">
-                                          <p className="font-bold text-slate-900 font-mono">
-                                            Total Quote: $
-                                            {bid.materialsCost + bid.laborCost}
-                                          </p>
-                                          <p className="text-[9px] text-slate-400 font-mono">
-                                            Mat: ${bid.materialsCost} • Lab: $
-                                            {bid.laborCost} • Hours:{" "}
-                                            {bid.estimatedHours}h
-                                          </p>
-                                        </div>
-                                      </div>
-                                      <div className="bg-slate-50 p-2 rounded border border-slate-100 text-[10px] text-slate-650 leading-relaxed italic">
-                                        "{bid.proposalNotes}"
-                                      </div>
-                                      <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
-                                        <div className="flex flex-col gap-1">
-                                          <span
-                                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider self-start ${
-                                              bid.status === "Accepted"
-                                                ? "bg-emerald-100 text-emerald-800"
-                                                : bid.status === "Rejected"
-                                                  ? "bg-red-100 text-red-800"
-                                                  : bid.status === "Countered"
-                                                    ? "bg-amber-100 text-amber-800"
-                                                    : "bg-amber-100 text-amber-800 animate-pulse"
-                                            }`}
-                                          >
-                                            {bid.status}{" "}
-                                            {bid.counterAmount
-                                              ? `(Countered: $${bid.counterAmount})`
-                                              : ""}
-                                          </span>
-                                        </div>
-
-                                        {bid.status === "Pending" && (
-                                          <div className="flex gap-1.5">
-                                            {showCounterOfferForBid ===
-                                            bid.id ? (
-                                              <div className="bg-amber-50 border border-amber-250 p-2 rounded space-y-1 text-left animate-fadeIn">
-                                                <input
-                                                  type="number"
-                                                  required
-                                                  value={counterAmountInput}
-                                                  onChange={(e) =>
-                                                    setCounterAmountInput(
-                                                      e.target.value,
-                                                    )
-                                                  }
-                                                  placeholder="Offer ($)"
-                                                  className="bg-white border border-amber-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-amber-500 font-mono w-20"
-                                                />
-                                                <div className="flex gap-1">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      handleSendCounterOffer(
-                                                        bid.id,
-                                                      )
-                                                    }
-                                                    className="bg-amber-600 text-white font-bold px-2 py-0.5 rounded text-[9px] shadow-sm"
-                                                  >
-                                                    Counter
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      setShowCounterOfferForBid(
-                                                        null,
-                                                      )
-                                                    }
-                                                    className="text-slate-400 text-[9px]"
-                                                  >
-                                                    ✕
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            ) : (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setShowCounterOfferForBid(
-                                                      bid.id,
-                                                    );
-                                                    setCounterAmountInput(
-                                                      String(
-                                                        bid.materialsCost +
-                                                          bid.laborCost -
-                                                          15,
-                                                      ),
-                                                    );
-                                                  }}
-                                                  className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 py-0.5 px-2 rounded hover:bg-amber-100"
-                                                >
-                                                  Counter Offer
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    rejectBidMutation.mutate({
-                                                      id: bid.id,
-                                                    })
-                                                  }
-                                                  className="text-[9px] font-bold text-red-650 bg-white border border-red-200 py-0.5 px-2 rounded hover:bg-red-50"
-                                                >
-                                                  Decline
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    acceptBidMutation.mutate({
-                                                      id: bid.id,
-                                                    })
-                                                  }
-                                                  className="text-[9px] font-bold text-white bg-emerald-600 py-0.5 px-2.5 rounded hover:bg-emerald-700 shadow-sm"
-                                                >
-                                                  Accept Proposal
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* Counter Offer Status Box for Contractor */}
-                                      {bid.status === "Countered" &&
-                                        bid.contractorId === user.id &&
-                                        bid.counterStatus === "Pending" && (
-                                          <div className="bg-amber-50 border border-amber-200 rounded p-2.5 space-y-2 mt-2 text-xs text-left animate-fadeIn">
-                                            <p className="font-semibold text-amber-800 mb-1.5">
-                                              Resident proposed counter:{" "}
-                                              <span className="font-mono font-bold">
-                                                ${bid.counterAmount}
-                                              </span>
-                                            </p>
-                                            <div className="flex gap-1.5 justify-end">
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  rejectCounterMutation.mutate({
-                                                    id: bid.id,
-                                                  })
-                                                }
-                                                className="text-[9px] font-bold text-red-600 bg-white border border-red-200 py-0.5 px-1.5 rounded hover:bg-red-50"
-                                              >
-                                                Decline Counter
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  acceptCounterMutation.mutate({
-                                                    id: bid.id,
-                                                  })
-                                                }
-                                                className="text-[9px] font-bold text-white bg-emerald-600 py-0.5 px-2 rounded hover:bg-emerald-700 shadow-sm"
-                                              >
-                                                Accept Counter
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                      {/* Bid Comments discussion area */}
-                                      <div className="mt-2 border-t border-slate-100 pt-2 space-y-1.5 text-left">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setSelectedBidForComments(
-                                              selectedBidForComments === bid.id
-                                                ? null
-                                                : bid.id,
-                                            )
-                                          }
-                                          className="text-[10px] font-bold text-indigo-650 hover:underline flex items-center gap-1"
-                                        >
-                                          <MessageSquare className="h-3 w-3" />
-                                          <span>
-                                            Clarifying discussion (
-                                            {selectedBidForComments === bid.id
-                                              ? "Hide"
-                                              : "Show"}
-                                            )
-                                          </span>
-                                        </button>
-
-                                        {selectedBidForComments === bid.id && (
-                                          <div className="bg-slate-50 border border-slate-200 rounded p-2 space-y-2 text-[10px] animate-fadeIn font-sans">
-                                            <div className="max-h-[110px] overflow-y-auto space-y-1.5 pr-1 font-sans">
-                                              {bidCommentsQuery.isLoading ? (
-                                                <p className="text-[9px] text-slate-400 italic">
-                                                  Syncing comments...
-                                                </p>
-                                              ) : activeBidComments.length ===
-                                                0 ? (
-                                                <p className="text-[9px] text-slate-400 italic">
-                                                  No clarifying comments posted
-                                                  yet. Ask a question!
-                                                </p>
-                                              ) : (
-                                                activeBidComments.map(
-                                                  (comment: any) => (
-                                                    <div
-                                                      key={comment.id}
-                                                      className="bg-white border border-slate-150 rounded p-1.5 shadow-sm"
-                                                    >
-                                                      <div className="flex justify-between items-center text-[8px] opacity-75 font-mono mb-0.5">
-                                                        <strong>
-                                                          {comment.senderName} (
-                                                          {comment.senderRole})
-                                                        </strong>
-                                                        <span>
-                                                          {new Date(
-                                                            comment.createdAt,
-                                                          ).toLocaleTimeString(
-                                                            [],
-                                                            {
-                                                              hour: "2-digit",
-                                                              minute: "2-digit",
-                                                            },
-                                                          )}
-                                                        </span>
-                                                      </div>
-                                                      <p className="text-slate-700 leading-snug">
-                                                        {comment.comment}
-                                                      </p>
-                                                    </div>
-                                                  ),
-                                                )
-                                              )}
-                                            </div>
-                                            <form
-                                              onSubmit={(e) =>
-                                                handleSendBidComment(e, bid.id)
-                                              }
-                                              className="flex gap-1.5 pt-1.5 border-t border-slate-200 font-sans"
-                                            >
-                                              <input
-                                                type="text"
-                                                required
-                                                value={bidCommentInput}
-                                                onChange={(e) =>
-                                                  setBidCommentInput(
-                                                    e.target.value,
-                                                  )
-                                                }
-                                                placeholder="Clarify price breakdown or timeline..."
-                                                className="flex-1 bg-white border border-slate-300 rounded px-2 py-0.5 text-[9px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500"
-                                              />
-                                              <button
-                                                type="submit"
-                                                className="bg-indigo-650 text-white font-bold px-2 py-0.5 rounded text-[9px] hover:bg-indigo-700 shadow-sm"
-                                              >
-                                                Post
-                                              </button>
-                                            </form>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     );
@@ -6295,6 +5638,55 @@ export default function Dashboard({
           )}
         </main>
       </div>
+
+
+      {/* Issue Delete Confirmation Modal */}
+      {issuePendingDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-1000 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-300 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-red-600 text-white px-5 py-3.5 flex justify-between items-center">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider">
+                Delete Issue
+              </h3>
+              <button
+                onClick={() => setIssuePendingDelete(null)}
+                className="text-red-100 hover:text-white transition-all text-sm font-bold font-mono cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 text-left space-y-2">
+              <p className="text-sm text-slate-800 font-semibold">
+                Are you sure you want to delete this issue?
+              </p>
+              <p className="text-xs text-slate-600">
+                <span className="font-bold">
+                  {issuePendingDelete.displayId || issuePendingDelete.id.slice(0, 8)}
+                </span>{" "}
+                • {issuePendingDelete.title}
+              </p>
+              <p className="text-xs text-red-600">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-white">
+              <button
+                onClick={() => setIssuePendingDelete(null)}
+                className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 font-bold px-3.5 py-2 rounded text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteIssue}
+                disabled={deleteIssueMutation.isPending}
+                className="bg-red-600 text-white font-bold px-4 py-2 rounded text-xs hover:bg-red-700 shadow-sm disabled:opacity-50"
+              >
+                {deleteIssueMutation.isPending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Issue Chat Popup Modal */}
       {activeIssueChatId && activeIssueChat && (

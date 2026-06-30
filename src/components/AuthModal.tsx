@@ -1,9 +1,18 @@
 import React, { useState } from "react";
 import { User } from "../types";
-import { LogIn, UserPlus, Home, Hammer, ShieldAlert, Sparkles, AlertCircle, Sun, Moon } from "lucide-react";
+import {
+  LogIn,
+  UserPlus,
+  Home,
+  Hammer,
+  ShieldAlert,
+  Sparkles,
+  AlertCircle,
+  Sun,
+  Moon,
+} from "lucide-react";
 import { trpc } from "../frontend/trpc";
 import { toast } from "sonner";
-
 
 interface AuthModalProps {
   onLoginSuccess: (user: User) => void;
@@ -11,25 +20,53 @@ interface AuthModalProps {
   toggleTheme: () => void;
 }
 
-export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthModalProps) {
+export default function AuthModal({
+  onLoginSuccess,
+  theme,
+  toggleTheme,
+}: AuthModalProps) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"resident" | "contractor" | "admin">("resident");
+  const [role, setRole] = useState<"resident" | "contractor" | "admin">(
+    "resident",
+  );
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [houseNumber, setHouseNumber] = useState("");
   const [specialty, setSpecialty] = useState("Plumber");
-  const [residenceType, setResidenceType] = useState<"owner" | "renter" | "">("");
+  const [residenceType, setResidenceType] = useState<"owner" | "renter" | "">(
+    "",
+  );
   const [residenceStartDate, setResidenceStartDate] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const demoAccounts = [
-    { label: "Sign in as Resident (John)", email: "john@resident.com", pass: "john123", role: "Resident" },
-    { label: "Sign in as Plumber (Bob)", email: "plumber@service.com", pass: "plumber123", role: "Contractor" },
-    { label: "Sign in as Sparky (Electrician)", email: "electrician@service.com", pass: "electrician123", role: "Contractor" },
-    { label: "Sign in as Elected Official (Admin)", email: "admin@community.org", pass: "admin123", role: "Administrator" },
+    {
+      label: "Sign in as Resident (John)",
+      email: "john@resident.com",
+      pass: "john123",
+      role: "Resident",
+    },
+    {
+      label: "Sign in as Plumber (Bob)",
+      email: "plumber@service.com",
+      pass: "plumber123",
+      role: "Contractor",
+    },
+    {
+      label: "Sign in as Sparky (Electrician)",
+      email: "electrician@service.com",
+      pass: "electrician123",
+      role: "Contractor",
+    },
+    {
+      label: "Sign in as Elected Official (Admin)",
+      email: "admin@community.org",
+      pass: "admin123",
+      role: "Administrator",
+    },
   ];
 
   const loginMutation = trpc.auth.login.useMutation();
@@ -40,9 +77,14 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
     setError("");
     const toastId = toast.loading("Accessing democracy playground...");
     try {
-      const res = await loginMutation.mutateAsync({ email: demoEmail, password: demoPass });
+      const res = await loginMutation.mutateAsync({
+        email: demoEmail,
+        password: demoPass,
+      });
       localStorage.setItem("community_hero_token", res.token);
-      toast.success(`Access granted! Welcome, ${res.user.name}`, { id: toastId });
+      toast.success(`Access granted! Welcome, ${res.user.name}`, {
+        id: toastId,
+      });
       onLoginSuccess(res.user as User);
     } catch (err: any) {
       const errMsg = err.message || "Login failed";
@@ -72,7 +114,9 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
     }
 
     setLoading(true);
-    const toastId = toast.loading(isRegister ? "Registering civic account..." : "Verifying credentials...");
+    const toastId = toast.loading(
+      isRegister ? "Registering civic account..." : "Verifying credentials...",
+    );
 
     try {
       if (isRegister) {
@@ -81,12 +125,16 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
           password,
         });
         localStorage.setItem("community_hero_token", res.token);
-        toast.success(`Account registered! Welcome, ${res.user.name}`, { id: toastId });
+        toast.success(`Account registered! Welcome, ${res.user.name}`, {
+          id: toastId,
+        });
         onLoginSuccess(res.user as User);
       } else {
         const res = await loginMutation.mutateAsync({ email, password });
         localStorage.setItem("community_hero_token", res.token);
-        toast.success(`Sign-in verified! Welcome back, ${res.user.name}`, { id: toastId });
+        toast.success(`Sign-in verified! Welcome back, ${res.user.name}`, {
+          id: toastId,
+        });
         onLoginSuccess(res.user as User);
       }
     } catch (err: any) {
@@ -98,12 +146,8 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
     }
   };
 
-
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
-
-
       {/* High Density styled subtle background grid */}
       <div className="absolute inset-0 opacity-10 dark:opacity-5 bg-[radial-gradient(#000_1px,transparent_1px)] dark:bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:20px_20px]"></div>
 
@@ -116,7 +160,7 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
             WARD<span className="text-emerald-600">WATCH</span>
           </h2>
           <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-mono">
-            Admin Terminal v2.4
+            Community Hero Platform v1.0
           </span>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             Civic action & problem solving
@@ -137,8 +181,8 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
               setError("");
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded transition-all duration-150 cursor-pointer ${
-              !isRegister 
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-800" 
+              !isRegister
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-800"
                 : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
             }`}
           >
@@ -150,8 +194,8 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
               setError("");
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded transition-all duration-150 cursor-pointer ${
-              isRegister 
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-800" 
+              isRegister
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-800"
                 : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
             }`}
           >
@@ -160,8 +204,6 @@ export default function AuthModal({ onLoginSuccess, theme, toggleTheme }: AuthMo
         </div>
 
         <form className="mt-4 space-y-3.5" onSubmit={handleSubmit}>
-
-
           {/* Email */}
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">

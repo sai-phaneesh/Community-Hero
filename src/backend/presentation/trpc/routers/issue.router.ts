@@ -17,6 +17,12 @@ export const issueRouter = router({
       return await ctx.issueUseCase.listIssuesPaginated(limit, cursor || undefined);
     }),
 
+  get: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      return await ctx.issueRepository.findById(input.id);
+    }),
+
   report: protectedProcedure
     .input(
       z.object({
